@@ -24,7 +24,7 @@ If you wish to install it onto your system, use `nix-env -f release.nix -iA lily
 
 ### Cabal/Stack
 
-You have been warned.
+Seek the [Cabal CI workflow](https://github.com/jiribenes/lily/blob/master/.github/workflows/cabal.yml) in this repository for guidance.
 
 1) Ensure that your GHC version is 8.8.3
 2) Ensure that you have Clang installed with libraries
