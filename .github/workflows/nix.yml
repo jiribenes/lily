@@ -1,0 +1,30 @@
+name: Nix CI
+
+# Trigger the workflow on push or pull request, but only for the master branch
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    name: ghc ${{ matrix.ghc }}
+    runs-on: ubuntu-16.04
+    strategy:
+        matrix:
+            ghc:
+                - "ghc865"
+                - "ghc883"
+
+    steps:
+    - uses: actions/checkout@v2
+      if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.ref == 'refs/heads/master'
+      with:
+        submodules: recursive
+
+    - uses: cachix/install-nix-action@v8
+      name: Setup Nix
+
+    - name: Build
+      run: |
+        nix-build --argstr compiler "${{ matrix.ghc }}" --attr lily release.nix  

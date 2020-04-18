@@ -1,0 +1,3 @@
+[submodule "deps/clang-pure"]
+	path = deps/clang-pure
+	url = https://github.com/jiribenes/clang-pure
