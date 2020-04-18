@@ -16,7 +16,7 @@ jobs:
             ghc:
                 - "ghc865"
                 - "ghc883"
-                - "ghc8101"  
+                # TODO: - "ghc8101"  
 
     steps:
     - uses: actions/checkout@v2
