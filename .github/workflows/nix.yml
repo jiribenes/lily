@@ -10,11 +10,13 @@ jobs:
   build:
     name: ghc ${{ matrix.ghc }}
     runs-on: ubuntu-16.04
+    if: "! contains(toJSON(github.event.commits.*.message), '[skip-ci]')" # respects [skip-ci]
     strategy:
         matrix:
             ghc:
                 - "ghc865"
                 - "ghc883"
+                - "ghc8101"  
 
     steps:
     - uses: actions/checkout@v2
