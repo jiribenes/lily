@@ -1,0 +1,55 @@
+name: Cabal CI
+
+# Trigger the workflow on push or pull request, but only for the master branch
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+jobs:
+  build:
+    name: ghc ${{ matrix.ghc }}
+    runs-on: ubuntu-16.04
+    if: "! contains(toJSON(github.event.commits.*.message), '[skip-ci]')" # respects [skip-ci]
+    strategy:
+      matrix:
+        cabal: ["3.0"]
+        ghc:
+          - "8.8.3"
+
+    steps:
+    - uses: actions/checkout@v2
+      if: github.event.action == 'opened' || github.event.action == 'synchronize' || github.event.ref == 'refs/heads/master'
+      with:
+        submodules: recursive
+
+    - uses: actions/setup-haskell@v1
+      name: Setup Haskell
+      with:
+        ghc-version: ${{ matrix.ghc }}
+        cabal-version: ${{ matrix.cabal }}
+
+    - uses: actions/cache@v1
+      name: Cache ~/.cabal/store
+      with:
+        path: ~/.cabal/store
+        key: ${{ runner.os }}-${{ matrix.ghc }}-cabal
+
+    - name: Install LLVM/Clang 9
+      run: |
+          wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
+          sudo add-apt-repository "deb http://apt.llvm.org/xenial llvm-toolchain-xenial-9 main"
+          sudo apt-get update
+          sudo apt-get install -y libclang-9-dev llvm-9-dev clang-9 llvm-9 
+          export CLANG_PURE_LLVM_LIB_DIR=/usr/lib/llvm-9/lib
+          export CLANG_PURE_LLVM_INCLUDE_DIR=/usr/lib/llvm-9/include
+          unset CC
+
+    - name: Build
+      run: |
+        cabal v2-update
+        cabal v2-build --enable-tests
+
+    - name: Test
+      run: |
+        cabal v2-test --enable-tests
