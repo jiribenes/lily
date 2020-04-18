@@ -11,7 +11,6 @@ jobs:
     name: ghc ${{ matrix.ghc }}
     runs-on: ubuntu-16.04
     if: "! contains(toJSON(github.event.commits.*.message), '[skip-ci]')" # respects [skip-ci]
-    if: "! contains(toJSON(github.event.commits.*.message), '[skip-nix-ci]')" # respects [skip-nix-ci]
     strategy:
         matrix:
             ghc:
