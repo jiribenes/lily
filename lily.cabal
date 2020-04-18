@@ -18,7 +18,7 @@ source-repository head
   location:         https://github.com/jiribenes/lily.git
 
 common common-options
-  build-depends:       base >= 4.13 && < 4.14, clang-pure
+  build-depends:       base >= 4.13 && < 4.14, clang-pure >= 0.2.0.7, lens, containers
   
   ghc-options:         -Wall
                        -Wcompat
