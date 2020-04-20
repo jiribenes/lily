@@ -1,8 +1,10 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Lily
   ( lily
@@ -10,11 +12,17 @@ module Lily
 where
 
 import           Control.Lens
-import qualified Data.Graph                    as G
 import           Control.Monad                  ( when )
-import qualified Data.Map                      as M
 import qualified Data.ByteString.Char8         as BS
+import           Data.ByteString.Char8          ( ByteString )
 import           Data.Foldable                  ( for_ )
+import           Data.Function                  ( on )
+import qualified Data.Graph                    as G
+import qualified Data.Map                      as M
+import qualified Data.Set                      as S
+import           Data.List                      ( groupBy
+                                                , sortOn
+                                                )
 import           Language.C.Clang
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
@@ -33,7 +41,6 @@ calledFunctions = referencedCalls . functionDecls
       . folding (T.matchKind @ 'CallExpr)
       . filtered (isFromMainFile . rangeStart . T.cursorExtent)
       . folding (cursorReferenced . T.withoutKind)
-
   functionDecls :: Fold Cursor FunctionCursor
   functionDecls = folding toFunction
 
@@ -41,35 +48,36 @@ allFunctions :: Fold Cursor FunctionCursor
 allFunctions = cursorDescendantsF . folding toFunction . filtered
   (isFromMainFile . rangeStart . T.cursorExtent)
 
+type FunctionGraphNode = (FunctionCursor, ByteString, [ByteString])
+type FunctionGraph = [FunctionGraphNode]
+
+normalize :: FunctionGraph -> FunctionGraph
+normalize = fmap representGroup . groupByUSR
+ where
+  representGroup xs =
+    ( fnCursor
+    , cursorUSR . T.withoutKind $ fnCursor
+    , xs ^.. traverse . _3 . traverse -- gather all `_3` in a single list
+    )
+    where fnCursor = xs ^?! _head . _1
+
+  groupByUSR = groupBy ((==) `on` view _2) . sortOn (view _2)
+
+
 lily :: FilePath -> IO ()
 lily filepath = do
   idx <- createIndex
   tu  <- parseTranslationUnit idx filepath []
-
   let functions = translationUnitCursor tu ^.. allFunctions
-  for_ functions $ \fn -> do
-    putStrLn . showLoc . T.withoutKind $ fn
-    let called = fn ^.. calledFunctions
+  let graph     = functions <&> intoGraphNode
 
-    when (fn `elem` called) $ putStrLn "~ self - r e c u r s i v e ~"
-
-    putStrLn $ unlines $ ("* " ++) . showLoc . T.withoutKind <$> called
-
-showLoc cur = case fileLoc cur of
-  Just Location {..} ->
-    BS.unpack (cursorSpelling cur)
-      <> " :: "
-      <> maybe "<NoType>" (BS.unpack . typeSpelling) (cursorType cur)
-      <> " ["
-      <> show column
-      <> ":"
-      <> show line
-      <> "]"
-  Nothing ->
-    BS.unpack (cursorSpelling cur)
-      <> " :: "
-      <> maybe "<NoType>" (BS.unpack . typeSpelling) (cursorType cur)
-      <> " [no loc]"
-
-fileLoc x = spellingLocation . rangeStart <$> cursorExtent x
-
+  let scc = graph & normalize & G.stronglyConnComp
+  pure ()
+ where
+  intoGraphNode :: FunctionCursor -> FunctionGraphNode
+  intoGraphNode fnDecl =
+    ( fnDecl
+    , typedCursorUSR fnDecl
+    , fnDecl ^.. calledFunctions . to typedCursorUSR
+    )
+    where typedCursorUSR = cursorUSR . T.withoutKind
