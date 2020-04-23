@@ -1,5 +1,5 @@
 builtins.fetchGit {
   url = "https://github.com/nixos/nixpkgs.git";
   ref = "refs/heads/nixos-unstable";
-  rev = "8686922e68dfce2786722acad9593ad392297188";
+  rev = "22a3bf9fb9edad917fb6cd1066d58b5e426ee975";
 }

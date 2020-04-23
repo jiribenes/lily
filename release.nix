@@ -11,6 +11,8 @@ let
                 haskellPackagesNew.callPackage ./lily.nix { };
               clang-pure =
                 pkgs.haskell.lib.dontCheck (haskellPackagesNew.callPackage ./deps/clang-pure/clang-pure.nix { });
+              inline-c =
+                haskellPackagesNew.callPackage ./inline-c.nix { };
             };
           };
         };

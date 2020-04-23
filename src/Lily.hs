@@ -12,14 +12,9 @@ module Lily
 where
 
 import           Control.Lens
-import           Control.Monad                  ( when )
-import qualified Data.ByteString.Char8         as BS
 import           Data.ByteString.Char8          ( ByteString )
-import           Data.Foldable                  ( for_ )
 import           Data.Function                  ( on )
 import qualified Data.Graph                    as G
-import qualified Data.Map                      as M
-import qualified Data.Set                      as S
 import           Data.List                      ( groupBy
                                                 , sortOn
                                                 )
@@ -40,7 +35,7 @@ calledFunctions = referencedCalls . functionDecls
     T.cursorDescendantsF
       . folding (T.matchKind @ 'CallExpr)
       . filtered (isFromMainFile . rangeStart . T.cursorExtent)
-      . folding (cursorReferenced . T.withoutKind)
+      . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
   functionDecls :: Fold Cursor FunctionCursor
   functionDecls = folding toFunction
 
@@ -59,20 +54,27 @@ normalize = fmap representGroup . groupByUSR
     , cursorUSR . T.withoutKind $ fnCursor
     , xs ^.. traverse . _3 . traverse -- gather all `_3` in a single list
     )
-    where fnCursor = xs ^?! _head . _1
+    where fnCursor = xs ^?! _head . _1 -- this is safe because when we get here in the actual program, 
+                                       -- we already know that we have at least one cursor :)
 
   groupByUSR = groupBy ((==) `on` view _2) . sortOn (view _2)
-
 
 lily :: FilePath -> IO ()
 lily filepath = do
   idx <- createIndex
   tu  <- parseTranslationUnit idx filepath []
-  let functions = translationUnitCursor tu ^.. allFunctions
-  let graph     = functions <&> intoGraphNode
 
-  let scc = graph & normalize & G.stronglyConnComp
+  let scc = recursiveComponents tu
+  print scc
   pure ()
+
+recursiveComponents :: TranslationUnit -> [G.SCC FunctionCursor]
+recursiveComponents tu =
+  translationUnitCursor tu
+    ^.. allFunctions
+    .   to intoGraphNode
+    &   normalize
+    &   G.stronglyConnComp
  where
   intoGraphNode :: FunctionCursor -> FunctionGraphNode
   intoGraphNode fnDecl =
