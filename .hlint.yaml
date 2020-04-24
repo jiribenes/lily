@@ -5,10 +5,10 @@
 - functions: # Disabled functions
   - {name: unsafePerformIO, within: []}
   - {name: unsafeCoerce, within: []}
-  - {name: head, within: []}
-  - {name: tail, within: []}
-  - {name: init, within: []}
-  - {name: last, within: []}
+  - {name: GHC.List.head, within: []}
+  - {name: GHC.List.tail, within: []}
+  - {name: GHC.List.init, within: []}
+  - {name: GHC.List.last, within: []}
 
 # Generalise map to fmap, ++ to <>
 - group: {name: generalise, enabled: true}
