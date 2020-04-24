@@ -1,9 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleContexts #-}
 
 module Lily
@@ -34,14 +32,14 @@ calledFunctions = referencedCalls . functionDecls
   referencedCalls =
     T.cursorDescendantsF
       . folding (T.matchKind @ 'CallExpr)
-      . filtered (isFromMainFile . rangeStart . T.cursorExtent)
+      -- . filtered ({-isFromMainFile . -} rangeStart . T.cursorExtent)
       . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
   functionDecls :: Fold Cursor FunctionCursor
   functionDecls = folding toFunction
 
 allFunctions :: Fold Cursor FunctionCursor
-allFunctions = cursorDescendantsF . folding toFunction . filtered
-  (isFromMainFile . rangeStart . T.cursorExtent)
+allFunctions = cursorDescendantsF . folding toFunction
+   -- . filtered ({-isFromMainFile . -} rangeStart . T.cursorExtent)
 
 type FunctionGraphNode = (FunctionCursor, ByteString, [ByteString])
 type FunctionGraph = [FunctionGraphNode]
@@ -61,9 +59,8 @@ normalize = fmap representGroup . groupByUSR
 
 lily :: FilePath -> IO ()
 lily filepath = do
-  idx <- createIndex
+  idx <- createIndexWithOptions [DisplayDiagnostics]
   tu  <- parseTranslationUnit idx filepath []
-
   let scc = recursiveComponents tu
   print scc
   pure ()
