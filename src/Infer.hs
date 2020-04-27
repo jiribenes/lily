@@ -34,16 +34,17 @@ import           Data.Maybe                     ( fromJust
                                                 , listToMaybe
                                                 )
 import           Data.Monoid                    ( (<>) )
-import           Data.Foldable                  ( fold )
+import           Data.Foldable                  (foldrM,  fold )
 import qualified Data.Text as Text
 
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-import           Language.C.Clang.Cursor ( cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
+import           Language.C.Clang.Cursor (cursorSpelling,  cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
 import           Language.C.Clang.Type ( typeCanonicalType, typeSpelling )
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
+import Data.Text.Encoding (decodeUtf8, encodeUtf8)
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving (Eq, Show)
@@ -60,6 +61,7 @@ data InferError = FromSolve SolveError
                | WrongConstraint [Constraint]
                | WrongConstructor Name
                | Weirdness
+               | UnexpectedParameterDeclarationOutsideFunction
                -- | Ambiguous       [Constraint]
                -- | WrongKind       TVar Type
 
@@ -73,11 +75,12 @@ instance Show InferError where
     -- show (WrongKind a b) = "Wrong kind!"
 
 -- | Infer monad allows to: read monomorphic variables, create fresh variables and raise errors
-type Infer a = ReaderT InferMonos (FreshT Text.Text (Except InferError)) a
+newtype Infer a = Infer { unInfer :: ReaderT InferMonos (FreshT Text.Text (Except InferError)) a }
+  deriving newtype (Functor, Applicative, Monad, MonadReader InferMonos, MonadFresh Text.Text, MonadError InferError)
 
 runInfer :: Infer a -> Either InferError a
 runInfer m =
-  runExcept $ evalFreshT (runReaderT m S.empty) initialFreshState
+  runExcept $ evalFreshT (runReaderT (unInfer m) S.empty) initialFreshState
 
 -- | Infer a single type for an expression
 inferExpr :: InferEnv -> FunctionCursor -> Either InferError Scheme
@@ -197,12 +200,15 @@ infer cursor = case cursorKind cursor of
     pure (as1 <> as2, t1, CEq t1 t2 : (cs1 <> cs2))
   
   -- parameter declaration
-  ParmDecl -> do -- TODO: THIS IS NOT CORRECT
-    pure (A.empty, typeInt, [])
+  ParmDecl -> throwError UnexpectedParameterDeclarationOutsideFunction
 
   -- variable reference
-  DeclRefExpr -> do -- TODO: THIS IS NOT CORRECT
-      pure (A.empty, typeInt, [])
+  DeclRefExpr -> do
+    tv <- freshType StarKind
+    
+    -- TODO: check if this is indeed the correct spelling!
+    let name = decodeUtf8 $ cursorSpelling cursor
+    pure (A.singleton (name, tv), tv, [])
 
   FunctionDecl -> do
     let
@@ -217,17 +223,36 @@ infer cursor = case cursorKind cursor of
       parameters = cursor ^.. parameterF . to T.withoutKind
       [body] = cursor ^.. bodyF . to T.withoutKind
 
-    (asList, tList, csList) <- unzip3 <$> traverse infer parameters
-    (as2, t2, cs2) <- infer body
+    -- TODO: extract this into its own function!
+    (paramTypes, paramTVars) <- unzip <$> traverse (const $ freshTypeAndTVar StarKind) parameters
+    let paramNames = cursor ^.. parameterF . to (decodeUtf8 . cursorSpelling . T.withoutKind)
+    -- TODO: Why don't ParamDecls have spelling? Investigate/fix!
 
-    -- THIS IS COMPLETELY INCORRECT! TODO TODO TODO
-    pure (as2 <> fold asList, t2, cs2 <> fold csList)
+    (as, returnType, cs) <- extendManyMonos paramTVars $ infer body
+
+    (fs, fsPreds) <- unzip <$> traverse (const freshFun) parameters -- arrow kind!
+    let as' = as `A.removeMany` paramNames
+    let wkns = (\(x, tv) -> wkn x tv as) =<< (zip paramNames paramTypes)
+    let preds :: [Constraint] = nub ((fs >>= \f -> leq f as') <> wkns)
+
+    let something = zip paramTypes fs
+    let functionType = foldr (\(tv, f) acc -> makeArrow tv f acc) returnType something
+
+    pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> mconcat fsPreds <> preds)
   
   other -> do
     traceShowM $ "Found: '" <> show other <> "'. Will attempt to solve the situation as best as I can!"
     -- just gather the constraints and hope for the best.. :shrug:
     (asList, tList, csList) <- unzip3 <$> (traverse infer $ cursorChildren cursor)
     pure (fold asList, head tList, fold csList)
+
+-- Helper for infer @'FunctionDecl
+-- TODO: Refactor!
+eqConstraints :: [Name] -> [Type] -> A.Assumption Type -> [Constraint]
+eqConstraints paramNames paramTypes as = do
+      (x, tv) <- zip paramNames paramTypes
+      t' <- A.lookup x as
+      pure $ CEq t' tv
 
 -- | This is the top-level function that should be used for inferring a type of something
 inferTop :: InferEnv -> [(Name, FunctionCursor)] -> Either InferError InferEnv

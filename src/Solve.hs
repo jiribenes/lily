@@ -189,3 +189,9 @@ freshType kind = do
   name <- fresh
   let tv = TV name kind
   pure $ TVar tv
+
+freshTypeAndTVar :: MonadFresh Name m => Kind -> m (Type, TVar)
+freshTypeAndTVar kind = do
+  name <- fresh
+  let tv = TV name kind
+  pure (TVar tv, tv)
