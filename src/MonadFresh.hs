@@ -7,6 +7,7 @@
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-} -- used for (~) constraint only
 
 module MonadFresh
@@ -35,7 +36,8 @@ import           Control.Monad.Trans.Maybe
 import           Control.Applicative
 
 import           Control.Lens
-
+import Data.Text (Text)
+import qualified Data.Text as T
 import qualified Data.List.NonEmpty            as NE
 import           Data.Kind                      ( Type )
 
@@ -49,8 +51,8 @@ makeLensesFor [("unFresh", "_fresh")] ''FreshState
 _neHead :: Lens' (NE.NonEmpty a) a
 _neHead f (a NE.:| as) = (NE.:| as) <$> f a
 
-initialFreshState :: FreshState Int
-initialFreshState = FreshState { unFresh = NE.iterate (+ 1) 0 }
+initialFreshState :: FreshState Text
+initialFreshState = FreshState { unFresh = ("t" <>) . T.pack . show <$> NE.iterate (+ 1) 0 }
 
 -- | Monad transformer for `FreshState`
 newtype FreshT n (m :: Type -> Type) a = FreshT { unFreshT :: StateT (FreshState n) m a }
