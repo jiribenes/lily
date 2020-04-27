@@ -40,7 +40,7 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     Lily
-  other-modules:       MonadFresh, Clang, Infer, Solve, Unify, Assumption, Type
+  other-modules:       MonadFresh, Clang, Infer, Solve, Unify, Assumption, Type, ClangType
 
 executable lily
   import:              common-options

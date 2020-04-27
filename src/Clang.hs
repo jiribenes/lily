@@ -5,7 +5,8 @@
 {-# LANGUAGE FlexibleContexts #-}
 
 module Clang
-  ( recursiveComponents
+  ( createTranslationUnit
+  , recursiveComponents
   , FunctionCursor
   )
 where
@@ -20,6 +21,11 @@ import           Data.List                      ( groupBy
 import           Language.C.Clang
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
+
+createTranslationUnit :: FilePath -> [String] -> IO TranslationUnit
+createTranslationUnit filepath clangOptions = do
+  idx <- createIndexWithOptions [DisplayDiagnostics]
+  parseTranslationUnit idx filepath clangOptions
 
 type FunctionCursor = T.CursorK 'FunctionDecl
 

@@ -9,7 +9,6 @@ module Lily
   )
 where
 
-import           Language.C.Clang
 import           Clang
 import           Infer ( inferTop, InferEnv )
 import Data.Graph (SCC(..))
@@ -17,8 +16,7 @@ import Data.Foldable (foldlM)
 
 lily :: FilePath -> IO ()
 lily filepath = do
-  idx <- createIndexWithOptions [DisplayDiagnostics]
-  tu  <- parseTranslationUnit idx filepath []
+  tu <- createTranslationUnit filepath []
   let scc = recursiveComponents tu
   print scc
 

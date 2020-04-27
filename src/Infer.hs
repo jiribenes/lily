@@ -16,6 +16,7 @@ import           MonadFresh
 import           Solve
 import           Unify
 import           Clang
+import           ClangType
 
 import           Control.Monad.Except
 import           Control.Monad.Identity
@@ -40,7 +41,6 @@ import qualified Data.Text as Text
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import           Language.C.Clang.Cursor (cursorSpelling,  cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
-import           Language.C.Clang.Type ( typeCanonicalType, typeSpelling )
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
@@ -62,8 +62,6 @@ data InferError = FromSolve SolveError
                | WrongConstructor Name
                | Weirdness
                | UnexpectedParameterDeclarationOutsideFunction
-               -- | Ambiguous       [Constraint]
-               -- | WrongKind       TVar Type
 
 instance Show InferError where
   show (FromSolve x) = show x
@@ -195,9 +193,12 @@ infer cursor = case cursorKind cursor of
 
   BinaryOperator -> do
     let [left, right] = cursorChildren cursor
+    -- fromJust is justified here as `HasType 'BinaryOperator`
+    let clangType = fromJust $ cursorType cursor
+    let operatorArgType = fromClangType clangType
     (as1, t1, cs1) <- infer left
     (as2, t2, cs2) <- infer right
-    pure (as1 <> as2, t1, CEq t1 t2 : (cs1 <> cs2))
+    pure (as1 <> as2, t1, CEq t1 t2 : CEq t1 operatorArgType : (cs1 <> cs2))
   
   -- parameter declaration
   ParmDecl -> throwError UnexpectedParameterDeclarationOutsideFunction
@@ -238,6 +239,10 @@ infer cursor = case cursorKind cursor of
     let something = zip paramTypes fs
     let functionType = foldr (\(tv, f) acc -> makeArrow tv f acc) returnType something
 
+    -- TODO: our real return type isn't actually the inferred type of the body
+    -- but rather a type variable that should unify with _all_ of the 'ReturnStmt'.
+    -- This might be an important distinction but also it could be irrelevant seeing as Clang must verify the file first.
+
     pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> mconcat fsPreds <> preds)
   
   other -> do
@@ -250,9 +255,9 @@ infer cursor = case cursorKind cursor of
 -- TODO: Refactor!
 eqConstraints :: [Name] -> [Type] -> A.Assumption Type -> [Constraint]
 eqConstraints paramNames paramTypes as = do
-      (x, tv) <- zip paramNames paramTypes
-      t' <- A.lookup x as
-      pure $ CEq t' tv
+  (x, tv) <- zip paramNames paramTypes
+  t' <- A.lookup x as
+  pure $ CEq t' tv
 
 -- | This is the top-level function that should be used for inferring a type of something
 inferTop :: InferEnv -> [(Name, FunctionCursor)] -> Either InferError InferEnv
