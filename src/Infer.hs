@@ -244,7 +244,7 @@ infer cursor = case cursorKind cursor of
     traceShowM $ "Found: '" <> show other <> "'. Will attempt to solve the situation as best as I can!"
     -- just gather the constraints and hope for the best.. :shrug:
     (asList, tList, csList) <- unzip3 <$> (traverse infer $ cursorChildren cursor)
-    pure (fold asList, head tList, fold csList)
+    pure (fold asList, last tList, fold csList)
 
 -- Helper for infer @'FunctionDecl
 -- TODO: Refactor!
