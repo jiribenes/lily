@@ -5,6 +5,7 @@ import           Type
 
 import           Data.Coerce
 import qualified Data.Set                      as S
+import Data.List (foldl')
 
 -- | Multimap of assumptions 
 newtype Assumption t = Assumption { unAssumption :: [(Name, t)] }
@@ -46,6 +47,9 @@ set (Assumption a) = S.fromList a
 
 intersection :: Ord t => Assumption t -> Assumption t -> Assumption t
 intersection as bs = Assumption . S.toList $ S.intersection (set as) (set bs)
+
+intersectMany :: Ord t => [Assumption t] -> Assumption t
+intersectMany as = Assumption . S.toList $ foldl' S.intersection S.empty (set <$> as)
 
 remove :: Assumption t -> Name -> Assumption t
 remove (Assumption a) x = Assumption $ filter ((/= x) . fst) a

@@ -79,7 +79,7 @@ runSolveT freshSt m = runExcept $ runFreshT (runReaderT m mkSolveEnv) freshSt
 mkSolveEnv :: SolveEnv
 mkSolveEnv = SolveEnv { _classEnv = mkClassEnv, _ctorEnv = mkCtorEnv }
     where
-        mkClassEnv = S.fromList [predNum typeInt, predUn typeUnArrow, predFun typeArrow, predFun typeLinArrow, predFun typeUnArrow]
+        mkClassEnv = S.fromList [predNum typeInt, predUn typeChar, predUn typeInt, predUn typeBool, predUn typeUnArrow, predFun typeArrow, predFun typeLinArrow, predFun typeUnArrow]
         mkCtorEnv = M.fromList [("Pair", pairCtor), ("Pointed", pointedCtor)]
 
 pairCtor :: Scheme
@@ -100,6 +100,7 @@ pointedCtor = Forall [aVar] ([] :=> (typeUnArrow `TAp` a `TAp` (pointedType `TAp
 pattern CFun x = CIn "Fun" [x]
 pattern CUn x = CIn "Un" [x]
 pattern CGeq x y = CIn "Geq" [x, y]
+pattern CMut x = CIn "Mut" [x]
 
 toPreds cs = [ IsIn n ts | CIn n ts <- cs ]
 fromPred (IsIn n ts) = CIn n ts

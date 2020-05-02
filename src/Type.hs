@@ -49,6 +49,8 @@ typeInt :: Type
 typeInt = TCon $ TC "Int" StarKind
 typeBool :: Type
 typeBool = TCon $ TC "Bool" StarKind
+typeChar :: Type
+typeChar = TCon $ TC "Char" StarKind
 conList :: TCon
 conList = TC "[]" $ ArrowKind StarKind StarKind
 typeList :: Type

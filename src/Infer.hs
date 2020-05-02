@@ -17,6 +17,7 @@ import           Solve
 import           Unify
 import           Clang
 import           ClangType
+import           Error
 
 import           Control.Monad.Except
 import           Control.Monad.Identity
@@ -40,11 +41,12 @@ import qualified Data.Text as Text
 
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-import           Language.C.Clang.Cursor (cursorSpelling,  cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
+import           Language.C.Clang.Cursor (cursorReferenced, cursorSpelling,  cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
 import Data.Text.Encoding (decodeUtf8, encodeUtf8)
+import Language.C.Clang.Type (typeResultType)
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving (Eq, Show)
@@ -69,6 +71,9 @@ instance Show InferError where
     "Not in scope: " <> unlines [ "\t\t" <> show a | a <- as ]
   show (WrongPredicate   pred) = "Wrong predicate: " <> show pred
   show (WrongConstructor n   ) = "Wrong constructor: " <> show n
+  show (WrongConstraint cs)    = "Wrong constraints: " <> show cs
+  show Weirdness               = "Encountered general weirdness! What?"
+  show UnexpectedParameterDeclarationOutsideFunction = "Unexpected parameter declaration outside a function declaration. Is your AST ok?"
     -- show (Ambiguous cs) = unlines ["Cannot match expected type: " <> show a <> " with actual type: " <> show b  | (a, b) <- cs]
     -- show (WrongKind a b) = "Wrong kind!"
 
@@ -81,7 +86,7 @@ runInfer m =
   runExcept $ evalFreshT (runReaderT (unInfer m) S.empty) initialFreshState
 
 -- | Infer a single type for an expression
-inferExpr :: InferEnv -> FunctionCursor -> Either InferError Scheme
+inferExpr :: InferEnv -> SomeFunctionCursor -> Either InferError Scheme
 inferExpr env expr = case runInfer (inferType env expr) of
   Left err -> Left err
   Right (subst, preds, ty) ->
@@ -106,9 +111,9 @@ runSolve cs = do
       setFresh newFresh
       pure result
 
-inferType :: InferEnv -> FunctionCursor -> Infer (Subst, [Pred], Type)
+inferType :: InferEnv -> SomeFunctionCursor -> Infer (Subst, [Pred], Type)
 inferType env expr = do
-  (as, t, cs) <- infer (T.withoutKind expr)
+  (as, t, cs) <- infer (unwrapSomeFunction expr)
 
   let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
 
@@ -190,9 +195,11 @@ infer :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
 infer cursor = case cursorKind cursor of
   IntegerLiteral -> pure (A.empty, typeInt, [])
   CXXBoolLiteralExpr -> pure (A.empty, typeBool, [])
+  CharacterLiteral -> pure (A.empty, typeChar, [])
 
   BinaryOperator -> do
     let [left, right] = cursorChildren cursor
+
     -- fromJust is justified here as `HasType 'BinaryOperator`
     let clangType = fromJust $ cursorType cursor
     let operatorArgType = fromClangType clangType
@@ -211,18 +218,52 @@ infer cursor = case cursorKind cursor of
     let name = decodeUtf8 $ cursorSpelling cursor
     pure (A.singleton (name, tv), tv, [])
 
-  FunctionDecl -> do
-    let
+  FunctionDecl -> inferSomeFunction cursor
+  FunctionTemplate -> inferSomeFunction cursor
+
+  -- AFAICT FirstExpr is just an awkward wrapper we don't care about
+  FirstExpr -> do
+    let [child] = cursorChildren cursor
+    (as, t, cs) <- infer child
+    pure (as, t, cs)
+
+  CallExpr -> do
+    -- here we're relying on the fact that the first child in AST tree will be a function reference
+    -- and the rest are arguments
+    let (functionRef:args) = cursorChildren cursor
+
+    (fAs, fT, fCs) <- infer functionRef
+    (asList, tList, csList) <- unzip3 <$> traverse infer args
+
+    (fs, fsPreds) <- unzip <$> traverse (const freshFun) args
+    tv            <- freshType StarKind 
+
+  
+    let as = fAs:asList
+    let preds = nub $ unrestricted $ A.intersectMany as
+
+    let functionType = foldr (\(t, f) acc -> makeArrow t f acc) tv $ zip tList fs
+
+    pure (mconcat as, tv, fCs <> mconcat csList <> preds <> mconcat fsPreds <> [CEq fT functionType])
+  
+  other -> do
+    traceShowM $ "Found: '" <> show other <> "'. Will attempt to solve the situation as best as I can!"
+    -- just gather the constraints and hope for the best.. :shrug:
+    (asList, tList, csList) <- unzip3 <$> (traverse infer $ cursorChildren cursor)
+    pure (fold asList, last tList, fold csList)
+
+inferSomeFunction :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
+inferSomeFunction cursor = do
       -- these are typically the first children but I really want to be safe here 
-      parameterF :: Fold Cursor (T.CursorK 'ParmDecl)
-      parameterF = cursorChildrenF . folding (T.matchKind @'ParmDecl)
+    let parameterF :: Fold Cursor (T.CursorK 'ParmDecl)
+        parameterF = cursorChildrenF . folding (T.matchKind @'ParmDecl)
 
       -- this is typically the last child but again, trying to be safe here!
-      bodyF :: Fold Cursor (T.CursorK 'CompoundStmt)
-      bodyF = cursorChildrenF . folding (T.matchKind @'CompoundStmt)
+    let bodyF :: Fold Cursor (T.CursorK 'CompoundStmt)
+        bodyF = cursorChildrenF . folding (T.matchKind @'CompoundStmt)
 
-      parameters = cursor ^.. parameterF . to T.withoutKind
-      [body] = cursor ^.. bodyF . to T.withoutKind
+    let parameters = cursor ^.. parameterF . to T.withoutKind
+    let [body] = cursor ^.. bodyF . to T.withoutKind
 
     -- TODO: extract this into its own function!
     (paramTypes, paramTVars) <- unzip <$> traverse (const $ freshTypeAndTVar StarKind) parameters
@@ -242,14 +283,10 @@ infer cursor = case cursorKind cursor of
     -- TODO: our real return type isn't actually the inferred type of the body
     -- but rather a type variable that should unify with _all_ of the 'ReturnStmt'.
     -- This might be an important distinction but also it could be irrelevant seeing as Clang must verify the file first.
+    clangReturnType <- note Weirdness $ cursorType cursor >>= typeResultType <&> fromClangType   
 
-    pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> mconcat fsPreds <> preds)
-  
-  other -> do
-    traceShowM $ "Found: '" <> show other <> "'. Will attempt to solve the situation as best as I can!"
-    -- just gather the constraints and hope for the best.. :shrug:
-    (asList, tList, csList) <- unzip3 <$> (traverse infer $ cursorChildren cursor)
-    pure (fold asList, last tList, fold csList)
+    pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> concat fsPreds <> preds <> [CEq returnType clangReturnType])
+
 
 -- Helper for infer @'FunctionDecl
 -- TODO: Refactor!
@@ -260,7 +297,7 @@ eqConstraints paramNames paramTypes as = do
   pure $ CEq t' tv
 
 -- | This is the top-level function that should be used for inferring a type of something
-inferTop :: InferEnv -> [(Name, FunctionCursor)] -> Either InferError InferEnv
+inferTop :: InferEnv -> [(Name, SomeFunctionCursor)] -> Either InferError InferEnv
 inferTop env []                  = Right env
 inferTop env ((name, expr) : xs) = case inferExpr env expr of
   Left  err -> Left err
