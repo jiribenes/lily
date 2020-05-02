@@ -11,6 +11,7 @@ where
 
 import           Clang
 import           Infer ( inferTop, InferEnv )
+import           Type (nameFromBS)
 import Data.Graph (SCC(..))
 import Data.Foldable (foldlM)
 import Data.Text.Encoding (decodeUtf8)
@@ -30,7 +31,7 @@ lily filepath = do
   pure ()
  where
   go :: InferEnv -> SCC SomeFunctionCursor -> IO InferEnv 
-  go env (AcyclicSCC func) = case inferTop env [(func & someSpelling & decodeUtf8, func)] of 
+  go env (AcyclicSCC func) = case inferTop env [(func & someSpelling & nameFromBS, func)] of 
     Left err -> do
       putStrLn $ "Error happened! " <> show err
       pure env

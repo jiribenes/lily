@@ -97,9 +97,13 @@ pointedCtor = Forall [aVar] ([] :=> (typeUnArrow `TAp` a `TAp` (pointedType `TAp
         pointedType = TCon (TC "Pointed" (ArrowKind StarKind StarKind))
 
 
+pattern CFun :: Type -> Constraint
 pattern CFun x = CIn "Fun" [x]
+pattern CUn :: Type -> Constraint
 pattern CUn x = CIn "Un" [x]
+pattern CGeq :: Type -> Type -> Constraint
 pattern CGeq x y = CIn "Geq" [x, y]
+pattern CMut :: Type -> Constraint
 pattern CMut x = CIn "Mut" [x]
 
 toPreds cs = [ IsIn n ts | CIn n ts <- cs ]

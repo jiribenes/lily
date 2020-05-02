@@ -10,8 +10,19 @@ import qualified Data.Set                      as S
 import           Data.Text                      ( Text )
 
 import           Data.List                      ( intercalate )
+import Data.String (IsString)
+import Data.ByteString.Char8 (ByteString)
+import Data.Text.Encoding (decodeUtf8)
+import qualified Data.Text as T
 
-type Name = Text
+newtype Name = Name { unName :: Text }
+  deriving newtype (Eq, Ord, IsString)
+
+instance Show Name where
+  show = T.unpack . unName
+
+nameFromBS :: ByteString -> Name
+nameFromBS = Name . decodeUtf8  
 
 data TVar = TV Name Kind deriving stock (Show, Eq, Ord)
 data TCon = TC Name Kind deriving stock (Show, Eq, Ord)
@@ -51,6 +62,12 @@ typeBool :: Type
 typeBool = TCon $ TC "Bool" StarKind
 typeChar :: Type
 typeChar = TCon $ TC "Char" StarKind
+conPtr :: TCon
+conPtr = TC "Ptr" $ ArrowKind StarKind StarKind
+typePtr :: Type
+typePtr = TCon conPtr
+typePtrOf :: Type -> Type
+typePtrOf t = typePtr `TAp` t
 conList :: TCon
 conList = TC "[]" $ ArrowKind StarKind StarKind
 typeList :: Type

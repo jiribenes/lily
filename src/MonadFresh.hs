@@ -36,10 +36,11 @@ import           Control.Monad.Trans.Maybe
 import           Control.Applicative
 
 import           Control.Lens
-import Data.Text (Text)
 import qualified Data.Text as T
 import qualified Data.List.NonEmpty            as NE
 import           Data.Kind                      ( Type )
+
+import Type (Name(..))
 
 newtype FreshState n = FreshState { unFresh :: NE.NonEmpty n }
 
@@ -51,8 +52,8 @@ makeLensesFor [("unFresh", "_fresh")] ''FreshState
 _neHead :: Lens' (NE.NonEmpty a) a
 _neHead f (a NE.:| as) = (NE.:| as) <$> f a
 
-initialFreshState :: FreshState Text
-initialFreshState = FreshState { unFresh = ("t" <>) . T.pack . show <$> NE.iterate (+ 1) 0 }
+initialFreshState :: FreshState Name
+initialFreshState = FreshState { unFresh = Name . ("t" <>) . T.pack . show <$> NE.iterate (+ 1) 0 }
 
 -- | Monad transformer for `FreshState`
 newtype FreshT n (m :: Type -> Type) a = FreshT { unFreshT :: StateT (FreshState n) m a }

@@ -14,7 +14,6 @@ import qualified Assumption                    as A
 import           Type
 import           MonadFresh
 import           Solve
-import           Unify
 import           Clang
 import           ClangType
 import           Error
@@ -41,7 +40,7 @@ import qualified Data.Text as Text
 
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-import           Language.C.Clang.Cursor (cursorReferenced, cursorSpelling,  cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
+import           Language.C.Clang.Cursor (cursorSpelling,  cursorChildrenF, cursorChildren, cursorKind, cursorType, Cursor, CursorKind(..))
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
@@ -64,6 +63,7 @@ data InferError = FromSolve SolveError
                | WrongConstructor Name
                | Weirdness
                | UnexpectedParameterDeclarationOutsideFunction
+               | UnknownASTNodeKind CursorKind
 
 instance Show InferError where
   show (FromSolve x) = show x
@@ -74,12 +74,13 @@ instance Show InferError where
   show (WrongConstraint cs)    = "Wrong constraints: " <> show cs
   show Weirdness               = "Encountered general weirdness! What?"
   show UnexpectedParameterDeclarationOutsideFunction = "Unexpected parameter declaration outside a function declaration. Is your AST ok?"
+  show (UnknownASTNodeKind k)      = "Unknown AST node: '" <> show k <> "'. Cannot recover!"
     -- show (Ambiguous cs) = unlines ["Cannot match expected type: " <> show a <> " with actual type: " <> show b  | (a, b) <- cs]
     -- show (WrongKind a b) = "Wrong kind!"
 
 -- | Infer monad allows to: read monomorphic variables, create fresh variables and raise errors
-newtype Infer a = Infer { unInfer :: ReaderT InferMonos (FreshT Text.Text (Except InferError)) a }
-  deriving newtype (Functor, Applicative, Monad, MonadReader InferMonos, MonadFresh Text.Text, MonadError InferError)
+newtype Infer a = Infer { unInfer :: ReaderT InferMonos (FreshT Name (Except InferError)) a }
+  deriving newtype (Functor, Applicative, Monad, MonadReader InferMonos, MonadFresh Name, MonadError InferError)
 
 runInfer :: Infer a -> Either InferError a
 runInfer m =
@@ -210,13 +211,13 @@ infer cursor = case cursorKind cursor of
   -- parameter declaration
   ParmDecl -> throwError UnexpectedParameterDeclarationOutsideFunction
 
-  -- variable reference
+  -- variable/function reference
   DeclRefExpr -> do
     tv <- freshType StarKind
     
     -- TODO: check if this is indeed the correct spelling!
     let name = decodeUtf8 $ cursorSpelling cursor
-    pure (A.singleton (name, tv), tv, [])
+    pure (A.singleton (Name name, tv), tv, [])
 
   FunctionDecl -> inferSomeFunction cursor
   FunctionTemplate -> inferSomeFunction cursor
@@ -244,12 +245,20 @@ infer cursor = case cursorKind cursor of
 
     let functionType = foldr (\(t, f) acc -> makeArrow t f acc) tv $ zip tList fs
 
-    pure (mconcat as, tv, fCs <> mconcat csList <> preds <> mconcat fsPreds <> [CEq fT functionType])
-  
+    pure (fold as, tv, fCs <> fold csList <> preds <> fold fsPreds <> [CEq fT functionType])
+
   other -> do
-    traceShowM $ "Found: '" <> show other <> "'. Will attempt to solve the situation as best as I can!"
-    -- just gather the constraints and hope for the best.. :shrug:
-    (asList, tList, csList) <- unzip3 <$> (traverse infer $ cursorChildren cursor)
+    traceM $ "Found: '" <> show other <> "'. Will attempt to solve the situation as best as I can!"
+    let children = cursorChildren cursor
+
+    traceM $ "This node has: " <> show (length children) <> " children!"
+
+    -- if the cursor doesn't have any children, we're out of luck and give up
+    when (null children) $ throwError $ UnknownASTNodeKind other
+
+    -- otherwise just gather the constraints and hope for the best.. :shrug:
+    -- TODO: this should be hidden under some '--best-effort' kind of flag
+    (asList, tList, csList) <- unzip3 <$> traverse infer children
     pure (fold asList, last tList, fold csList)
 
 inferSomeFunction :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
@@ -267,7 +276,7 @@ inferSomeFunction cursor = do
 
     -- TODO: extract this into its own function!
     (paramTypes, paramTVars) <- unzip <$> traverse (const $ freshTypeAndTVar StarKind) parameters
-    let paramNames = cursor ^.. parameterF . to (decodeUtf8 . cursorSpelling . T.withoutKind)
+    let paramNames = cursor ^.. parameterF . to (Name . decodeUtf8 . cursorSpelling . T.withoutKind)
     -- TODO: Why don't ParamDecls have spelling? Investigate/fix!
 
     (as, returnType, cs) <- extendManyMonos paramTVars $ infer body
@@ -285,7 +294,7 @@ inferSomeFunction cursor = do
     -- This might be an important distinction but also it could be irrelevant seeing as Clang must verify the file first.
     clangReturnType <- note Weirdness $ cursorType cursor >>= typeResultType <&> fromClangType   
 
-    pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> concat fsPreds <> preds <> [CEq returnType clangReturnType])
+    pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> fold fsPreds <> preds <> [CEq returnType clangReturnType])
 
 
 -- Helper for infer @'FunctionDecl
@@ -314,7 +323,7 @@ normalize (Forall origVars qt) = Forall
   usefulVars     = S.toList $ S.fromList origVars `S.intersection` bodyFV
   sub            = M.fromList $ (\(old@(TV _ k), n) -> (old, TV n k)) <$> zip
     usefulVars
-    (("t" <>) . Text.pack . show <$> [1 .. ])
+    (Name . ("t" <>) . Text.pack . show <$> [1 .. ])
 
   properSub = Subst $ M.map TVar sub
 

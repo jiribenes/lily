@@ -54,9 +54,12 @@ bind tv@(TV _ k) t | t == TVar tv     = pure emptySubst
                    | occursCheck tv t = throwError $ InfiniteType tv t
                    | otherwise        = pure $ Subst $ M.singleton tv t
 
+-- | This function requires the two lists to be equal in length.
+-- | Please make sure that they are or else this program throws a runtime error!
 unifyMany :: MonadError UnificationError m => [Type] -> [Type] -> m Subst
 unifyMany []       []       = pure emptySubst
 unifyMany (t : ts) (u : us) = do
   sub1 <- unifies t u
   sub2 <- unifyMany (sub1 `apply` ts) (sub1 `apply` us)
-  pure (sub2 `compose` sub1)  
+  pure (sub2 `compose` sub1)
+unifyMany _ _ = error "unifyMany: the length of lists differs!"
