@@ -206,7 +206,7 @@ infer cursor = case cursorKind cursor of
 
     -- fromJust is justified here as `HasType 'BinaryOperator`
     let clangType = fromJust $ cursorType cursor
-    let operatorArgType = fromClangType clangType
+    let operatorArgType = fromJust $ fromClangType clangType
     (as1, t1, cs1) <- infer left
     (as2, t2, cs2) <- infer right
     pure (as1 <> as2, t1, CEq t1 t2 : CEq t1 operatorArgType : (cs1 <> cs2))
@@ -223,7 +223,7 @@ infer cursor = case cursorKind cursor of
     -- TODO: now it's just for deref!
     tv <- freshType StarKind
     (as, t, cs) <- infer child
-    pure (as, tv, CEq t (typePtrOf tv) : cs)
+    pure (as, tv, CEq t (typePtrOf tv) : cs <> unrestricted as)
   
   -- parameter declaration
   ParmDecl -> throwError UnexpectedParameterDeclarationOutsideFunction
@@ -295,6 +295,8 @@ inferSomeFunction cursor = do
     let paramNames = cursor ^.. parameterF . to (Name . decodeUtf8 . cursorSpelling . T.withoutKind)
     -- TODO: Why don't ParamDecls have spelling? Investigate/fix!
 
+    -- TODO: If we're a generic/template function, then some ParamDecls have a child "TypeRef"
+    -- we could use to constrain the type even further!
     (as, returnType, cs) <- extendManyMonos paramTVars $ infer body
 
     (fs, fsPreds) <- unzip <$> traverse (const freshFun) parameters -- arrow kind!
@@ -308,9 +310,9 @@ inferSomeFunction cursor = do
     -- TODO: our real return type isn't actually the inferred type of the body
     -- but rather a type variable that should unify with _all_ of the 'ReturnStmt'.
     -- This might be an important distinction but also it could be irrelevant seeing as Clang must verify the file first.
-    clangReturnType <- note Weirdness $ cursorType cursor >>= typeResultType <&> fromClangType   
+    let returnEqConstraint = maybe [] (\x -> [CEq x returnType]) $ cursorType cursor >>= typeResultType >>= fromClangType
 
-    pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> fold fsPreds <> preds <> [CEq returnType clangReturnType])
+    pure (as', functionType, returnEqConstraint <> cs <> (eqConstraints paramNames paramTypes as) <> fold fsPreds <> preds)
 
 -- | Call this for expressions that have a single child
 -- and therefore are only some semantic wrappers!

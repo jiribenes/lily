@@ -179,13 +179,14 @@ instantiate (Forall xs qt) = do
       preds :=> t = sub `apply` qt
   pure (t, fromPred <$> preds)
 
+-- TODO: This function is a bit incorrect, see below
 generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
 generalize unsolved free t = traceShow (("tyVars", tyVars), ("preds", preds)) $ Forall (S.toList tyVars) (preds :=> t)
  where
   tyVars = ftv t `S.difference` free
   preds  = filter
     (\(IsIn _ xs) -> any (`isIn` tyVars) xs)
-    (toPreds unsolved)
+    (toPreds unsolved) -- This for example discharges any (Un $ConcreteType) even when it's really not true! That's a real problem! TODO TODO TODO
   isIn (TVar x) xs = x `S.member` xs
   isIn _        _  = False
 
