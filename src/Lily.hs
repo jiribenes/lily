@@ -10,12 +10,14 @@ module Lily
 where
 
 import           Clang
-import           Infer ( inferTop, InferEnv )
-import           Type (nameFromBS)
-import Data.Graph (SCC(..))
-import Data.Foldable (foldlM)
-import Data.Text.Encoding (decodeUtf8)
-import Data.Function ((&))
+import           Infer                          ( inferTop
+                                                , InferEnv
+                                                )
+import           Type                           ( nameFromBS )
+import           Data.Graph                     ( SCC(..) )
+import           Data.Foldable                  ( foldlM )
+import           Data.Text.Encoding             ( decodeUtf8 )
+import           Data.Function                  ( (&) )
 
 lily :: FilePath -> IO ()
 lily filepath = do
@@ -30,10 +32,10 @@ lily filepath = do
   print finalEnv
   pure ()
  where
-  go :: InferEnv -> SCC SomeFunctionCursor -> IO InferEnv 
-  go env (AcyclicSCC func) = case inferTop env [(func & someSpelling & nameFromBS, func)] of 
-    Left err -> do
-      putStrLn $ "Error happened! " <> show err
-      pure env
-    Right newEnv ->
-      pure newEnv
+  go :: InferEnv -> SCC SomeFunctionCursor -> IO InferEnv
+  go env (AcyclicSCC func) =
+    case inferTop env [(func & someSpelling & nameFromBS, func)] of
+      Left err -> do
+        putStrLn $ "Error happened! " <> show err
+        pure env
+      Right newEnv -> pure newEnv

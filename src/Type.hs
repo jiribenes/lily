@@ -10,10 +10,10 @@ import qualified Data.Set                      as S
 import           Data.Text                      ( Text )
 
 import           Data.List                      ( intercalate )
-import Data.String (IsString)
-import Data.ByteString.Char8 (ByteString)
-import Data.Text.Encoding (decodeUtf8)
-import qualified Data.Text as T
+import           Data.String                    ( IsString )
+import           Data.ByteString.Char8          ( ByteString )
+import           Data.Text.Encoding             ( decodeUtf8 )
+import qualified Data.Text                     as T
 
 newtype Name = Name { unName :: Text }
   deriving newtype (Eq, Ord, IsString)
@@ -22,7 +22,7 @@ instance Show Name where
   show = T.unpack . unName
 
 nameFromBS :: ByteString -> Name
-nameFromBS = Name . decodeUtf8  
+nameFromBS = Name . decodeUtf8
 
 data TVar = TV Name Kind deriving stock (Show, Eq, Ord)
 data TCon = TC Name Kind deriving stock (Show, Eq, Ord)
@@ -40,9 +40,9 @@ data Kind = StarKind
           deriving stock (Eq, Ord)
 
 instance Show Kind where
-  show StarKind        = "Type"
-  show (ArrowKind StarKind StarKind) = "Type -> Type"
-  show (ArrowKind a b@ArrowKind{}) = show a <> " -> " <> show b
+  show StarKind                           = "Type"
+  show (ArrowKind StarKind StarKind     ) = "Type -> Type"
+  show (ArrowKind a        b@ArrowKind{}) = show a <> " -> " <> show b
   show (ArrowKind a b) = "(" <> show a <> " -> " <> show b <> ")"
 
 instance Show Type where
@@ -71,7 +71,7 @@ typePtrOf t = typePtr `TAp` t
 conList :: TCon
 conList = TC "[]" $ ArrowKind StarKind StarKind
 typeList :: Type
-typeList = TCon conList 
+typeList = TCon conList
 arrowKind :: Kind
 arrowKind = ArrowKind StarKind (ArrowKind StarKind StarKind)
 conArrow :: TCon
@@ -135,11 +135,10 @@ showPretty ps (f `TAp` a `TAp` b)
     <> "> "
     <> showPretty ps b
     <> ")"
-showPretty _ (TCon (TC c _)) = show c
-showPretty ps (TAp (TCon c) b)
-  | c == conList = "[" <> showPretty ps b <> "]"
-showPretty ps (TAp a b)
-  = "(" <> showPretty ps a <> " " <> showPretty ps b <> ")"
+showPretty _ (TCon (TC c _))                  = show c
+showPretty ps (TAp (TCon c) b) | c == conList = "[" <> showPretty ps b <> "]"
+showPretty ps (TAp a b) =
+  "(" <> showPretty ps a <> " " <> showPretty ps b <> ")"
 
 
 isOnlyFun :: S.Set Pred -> Type -> Bool
@@ -245,5 +244,5 @@ typeKind :: Type -> Kind
 typeKind (TCon (TC _ k)) = k
 typeKind (TVar (TV _ k)) = k
 typeKind (TAp a _      ) = case typeKind a of
-    ArrowKind _ k -> k
-    k             -> k
+  ArrowKind _ k -> k
+  k             -> k
