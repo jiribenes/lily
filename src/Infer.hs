@@ -228,19 +228,36 @@ infer cursor = case cursorKind cursor of
   UnaryOperator -> do
     let [child] = cursorChildren cursor
 
-    traceM $ show $ parseUnOp (fromJust $ T.matchKind @ 'UnaryOperator $ cursor)
+    -- TODO: Handle the error more gracefully!
+    unOp <- note Weirdness
+      $ parseUnOp (fromJust $ T.matchKind @ 'UnaryOperator $ cursor)
 
-    -- fromJust is justified here as `HasType 'UnaryOperator`
-    -- let clangType = fromJust $ cursorType cursor
-    -- let operatorArgType = fromClangType clangType
-
-    -- TODO: now it's just for deref!
-    tv          <- freshType StarKind
     (as, t, cs) <- infer child
-    pure (as, tv, CEq t (typePtrOf tv) : cs <> unrestricted as)
+
+    case unOp of
+      UnOpDeref -> do
+        tv <- freshType StarKind
+        pure (as, tv, CEq t (typePtrOf tv) : cs <> unrestricted as)
+      UnOpAddrOf -> do
+        tv <- freshType StarKind
+        pure (as, tv, CEq tv (typePtrOf t) : cs <> unrestricted as)
+      other -> do
+        traceM $ "Best effort for unary operation: " <> show other <> "!"
+
+        -- fromJust is justified here as `HasType 'UnaryOperator`
+        let clangType = fromJust $ cursorType cursor >>= fromClangType
+        pure (as, t, CEq t clangType : cs <> unrestricted as)
 
   -- parameter declaration
   ParmDecl    -> throwError UnexpectedParameterDeclarationOutsideFunction
+
+  -- TODO: Variable declaration
+  -- should become 
+  --
+  -- _let_ x = <RHS> _in_ <rest of the program>
+  --
+  -- How can we do this efficiently?
+  -- Because we need to thread the values together!
 
   -- variable/function reference
   DeclRefExpr -> do
@@ -258,7 +275,8 @@ infer cursor = case cursorKind cursor of
   FunctionTemplate -> inferSomeFunction cursor
 
   FirstExpr        -> inferSingleChild cursor
-  CompoundStmt     -> inferSingleChild cursor
+  CompoundStmt     -> inferLastChild cursor
+  ReturnStmt       -> inferSingleChild cursor
 
   CallExpr         -> do
     -- here we're relying on the fact that the first child in AST tree will be a function reference
@@ -298,11 +316,10 @@ infer cursor = case cursorKind cursor of
 
     if (length children == 1)
       then inferSingleChild cursor
-      else do
+      else inferLastChild cursor
       -- otherwise just gather the constraints and hope for the best.. :shrug:
       -- TODO: this should be hidden under some '--best-effort' kind of flag
-        (asList, tList, csList) <- unzip3 <$> traverse infer children
-        pure (fold asList, last tList, fold csList)
+
 
 inferSomeFunction :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
 inferSomeFunction cursor = do
@@ -363,6 +380,11 @@ inferSingleChild cursor = do
   let [child] = cursorChildren cursor
   (as, t, cs) <- infer child
   pure (as, t, cs)
+
+inferLastChild :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
+inferLastChild cursor = do
+  (asList, tList, csList) <- unzip3 <$> traverse infer (cursorChildren cursor)
+  pure (fold asList, last tList, fold csList)
 
 -- Helper for infer @'FunctionDecl
 -- TODO: Refactor!
