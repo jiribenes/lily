@@ -192,6 +192,7 @@ cand :: [Constraint] -> [Constraint]
 cand xs = {-[CAnd-} xs{-]-}
 
 -- | Take an expression and produce assumptions, result type and constraints to be solved
+-- TODO: could this be nicer and more specific by using _singletons_ directly?
 infer :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
 infer cursor = case cursorKind cursor of
   IntegerLiteral -> pure (A.empty, typeInt, [])
@@ -201,12 +202,28 @@ infer cursor = case cursorKind cursor of
   BinaryOperator -> do
     let [left, right] = cursorChildren cursor
 
+    traceM $ show $ parseBinOp (fromJust $ T.matchKind @'BinaryOperator $ cursor)
+
     -- fromJust is justified here as `HasType 'BinaryOperator`
     let clangType = fromJust $ cursorType cursor
     let operatorArgType = fromClangType clangType
     (as1, t1, cs1) <- infer left
     (as2, t2, cs2) <- infer right
     pure (as1 <> as2, t1, CEq t1 t2 : CEq t1 operatorArgType : (cs1 <> cs2))
+
+  UnaryOperator -> do
+    let [child] = cursorChildren cursor
+
+    traceM $ show $ parseUnOp (fromJust $ T.matchKind @'UnaryOperator $ cursor)
+
+    -- fromJust is justified here as `HasType 'UnaryOperator`
+    -- let clangType = fromJust $ cursorType cursor
+    -- let operatorArgType = fromClangType clangType
+
+    -- TODO: now it's just for deref!
+    tv <- freshType StarKind
+    (as, t, cs) <- infer child
+    pure (as, tv, CEq t (typePtrOf tv) : cs)
   
   -- parameter declaration
   ParmDecl -> throwError UnexpectedParameterDeclarationOutsideFunction
@@ -218,15 +235,13 @@ infer cursor = case cursorKind cursor of
     -- TODO: check if this is indeed the correct spelling!
     let name = decodeUtf8 $ cursorSpelling cursor
     pure (A.singleton (Name name, tv), tv, [])
+    -- ^ We are actually never using the resulting type of this directly -- only indirectly through assumptions!
 
   FunctionDecl -> inferSomeFunction cursor
   FunctionTemplate -> inferSomeFunction cursor
 
-  -- AFAICT FirstExpr is just an awkward wrapper we don't care about
-  FirstExpr -> do
-    let [child] = cursorChildren cursor
-    (as, t, cs) <- infer child
-    pure (as, t, cs)
+  FirstExpr -> inferSingleChild cursor
+  CompoundStmt -> inferSingleChild cursor
 
   CallExpr -> do
     -- here we're relying on the fact that the first child in AST tree will be a function reference
@@ -256,10 +271,11 @@ infer cursor = case cursorKind cursor of
     -- if the cursor doesn't have any children, we're out of luck and give up
     when (null children) $ throwError $ UnknownASTNodeKind other
 
-    -- otherwise just gather the constraints and hope for the best.. :shrug:
-    -- TODO: this should be hidden under some '--best-effort' kind of flag
-    (asList, tList, csList) <- unzip3 <$> traverse infer children
-    pure (fold asList, last tList, fold csList)
+    if (length children == 1) then inferSingleChild cursor else do 
+      -- otherwise just gather the constraints and hope for the best.. :shrug:
+      -- TODO: this should be hidden under some '--best-effort' kind of flag
+      (asList, tList, csList) <- unzip3 <$> traverse infer children
+      pure (fold asList, last tList, fold csList)
 
 inferSomeFunction :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
 inferSomeFunction cursor = do
@@ -296,6 +312,13 @@ inferSomeFunction cursor = do
 
     pure (as', functionType, cs <> (eqConstraints paramNames paramTypes as) <> fold fsPreds <> preds <> [CEq returnType clangReturnType])
 
+-- | Call this for expressions that have a single child
+-- and therefore are only some semantic wrappers!
+inferSingleChild :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
+inferSingleChild cursor = do
+    let [child] = cursorChildren cursor
+    (as, t, cs) <- infer child
+    pure (as, t, cs)
 
 -- Helper for infer @'FunctionDecl
 -- TODO: Refactor!

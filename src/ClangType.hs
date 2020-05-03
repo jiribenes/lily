@@ -19,4 +19,4 @@ fromClangType clangType = case Clang.typeKind canonicalClangType of
   other -> error $ unlines ["internal error: Encountered unknown Clang type (no conversion available!)", "\t\tSpelling:\t" <> (BS.unpack $ typeSpelling clangType), "\t\tKind:\t'" <> show other <> "'"]
 
  where
-  canonicalClangType = typeCanonicalType clangType
+  canonicalClangType = typeCanonicalType clangType  
