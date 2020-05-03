@@ -234,8 +234,9 @@ infer cursor = case cursorKind cursor of
     
     -- TODO: check if this is indeed the correct spelling!
     let name = decodeUtf8 $ cursorSpelling cursor
-    pure (A.singleton (Name name, tv), tv, [])
-    -- ^ We are actually never using the resulting type of this directly -- only indirectly through assumptions!
+    pure ( A.singleton (Name name, tv)
+         , tv  -- Note: We are actually never using the resulting type of this directly -- only indirectly through assumptions!
+         , [] )
 
   FunctionDecl -> inferSomeFunction cursor
   FunctionTemplate -> inferSomeFunction cursor
