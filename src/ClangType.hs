@@ -1,5 +1,6 @@
 module ClangType
-  ( fromClangType
+  ( ClangType
+  , fromClangType
   )
 where
 

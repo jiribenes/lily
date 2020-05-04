@@ -8,7 +8,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Clang
-  ( createTranslationUnit
+  ( isCanonical
+  , createTranslationUnit
   , recursiveComponents
   , FunctionCursor
   , FunctionTemplateCursor
@@ -65,6 +66,10 @@ someUSR = cursorUSR . unwrapSomeFunction
 someSpelling :: SomeFunctionCursor -> ByteString
 someSpelling = cursorSpelling . unwrapSomeFunction
 
+-- | Returns true if this cursor is actually canonical!
+isCanonical :: Cursor -> Bool
+isCanonical c = cursorCanonical c == c
+
 toFunction :: Cursor -> Maybe FunctionCursor
 toFunction = T.matchKind @ 'FunctionDecl
 
@@ -96,6 +101,7 @@ allFunctions = cursorDescendantsF . folding toSomeFunction
 type FunctionGraphNode = (SomeFunctionCursor, ByteString, [ByteString])
 type FunctionGraph = [FunctionGraphNode]
 
+-- | TODO: We will always have at most one _real_ implementation, right?
 normalize :: FunctionGraph -> FunctionGraph
 normalize = fmap representGroup . groupByUSR
  where
@@ -133,7 +139,9 @@ printAST tu = go 0 $ translationUnitCursor tu
   go i c = do
     let kind     = show $ cursorKind c
     let spelling = BS.unpack $ cursorSpelling c
-    putStrLn $ (indent i kind) <> ", " <> spelling
+    let canon = if isCanonical c then " [canon]" else ""
+
+    putStrLn $ (indent i kind) <> canon <> if null spelling then "" else ", " <> spelling
     traverse_ (go (i + 4)) $ cursorChildren c
 
   indent :: Int -> String -> String
@@ -174,7 +182,7 @@ data BinOp = BinOpPtrMemD
            | BinOpXorAssign
            | BinOpOrAssign
            | BinOpComma
-  deriving (Eq, Ord, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 isAssignOp :: BinOp -> Bool
 isAssignOp o = o >= BinOpAssign && o <= BinOpOrAssign
