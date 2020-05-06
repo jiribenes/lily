@@ -2,7 +2,6 @@
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module Core.Syntax where
@@ -17,14 +16,12 @@ import           Language.C.Clang.Cursor        ( cursorKind
 import           Control.Lens
 import           Data.Functor                   ( ($>) )
 import           Clang
-import           Data.Maybe                     ( fromJust )
 import qualified Data.ByteString.Char8         as BS
-import           Data.Void                      ( Void )
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
 -- Multiple different expressions can have and indeed WILL have the same cursor.
-data Expr' t c  = Var c Name
+data Expr' t c = Var c Name
                | App c (Expr' t c) (Expr' t c)
                | Lam c t Name (Expr' t c)
                | LetIn c Name (Expr' t c) (Expr' t c)
@@ -44,9 +41,9 @@ data BuiltinExpr = BuiltinBinOp BinOp
 
 instance Show BuiltinExpr where
   show (BuiltinBinOp bop) =
-    "@builtin_binop_" <> (drop (length "BinOp") $ show bop)
+    "@builtin_binop_" <> drop (length "BinOp") (show bop)
   show (BuiltinUnOp uop) =
-    "@builtin_unop_" <> (drop (length "UnOp") $ show uop)
+    "@builtin_unop_" <> drop (length "UnOp") (show uop)
   show BuiltinUnit = "@builtin_unit"
 
 deriving instance (Functor (Expr' t))
@@ -92,7 +89,7 @@ instance Show (Expr' t Cursor) where
     "if " <> show cond <> " then " <> show thn <> " else " <> show els
   show (Literal c) =
     let spelling = BS.unpack $ cursorSpelling c
-    in  if null spelling then "<" <> (show $ cursorKind c) <> ">" else spelling
+    in  if null spelling then "<" <> show (cursorKind c) <> ">" else spelling
   {-show (Ctor n e  ) = "(" <> show n <> " " <> show e <> ")"
   show (Elim k xs e1 e2) =
     "letelim "

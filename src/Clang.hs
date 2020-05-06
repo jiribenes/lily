@@ -141,13 +141,13 @@ printAST tu = go 0 $ translationUnitCursor tu
     let spelling = BS.unpack $ cursorSpelling c
     let canon    = if isCanonical c then " [canon]" else ""
 
-    putStrLn $ (indent i kind) <> canon <> if null spelling
+    putStrLn $ indent i kind <> canon <> if null spelling
       then ""
       else ", " <> spelling
     traverse_ (go (i + 4)) $ cursorChildren c
 
   indent :: Int -> String -> String
-  indent i s = (replicate i ' ') <> s
+  indent i s = replicate i ' ' <> s
 
 -- Should be synchronized to the 
 -- [Clang source](https://github.com/llvm/llvm-project/blob/release/9.x/clang/include/clang/AST/OperationKinds.def)

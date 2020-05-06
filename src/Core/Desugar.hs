@@ -72,7 +72,7 @@ desugarExpr cursor = case cursorKind cursor of
 
     pure $ foldl1 (App cursor) exprs
 
-  IntegerLiteral -> do
+  IntegerLiteral ->
     pure $ Literal cursor
 
   FirstExpr -> desugarSingleChild cursor
@@ -93,7 +93,7 @@ desugarBlock cursor = do
   longFunc = foldlM go id $ T.cursorChildren cursor
 
 desugarStmt :: MonadError DesugarError m => Cursor -> m Expr
-desugarStmt cursor = do
+desugarStmt cursor =
   case cursorKind cursor of
     CompoundStmt ->
       desugarBlock $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
@@ -103,7 +103,7 @@ desugarStmt cursor = do
 
 
 desugarBlockOne :: MonadError DesugarError m => Cursor -> m (Expr -> Expr)
-desugarBlockOne cursor = do
+desugarBlockOne cursor =
   case cursorKind cursor of
     DeclStmt -> do
       let [child] = cursorChildren cursor
@@ -151,7 +151,7 @@ desugarBlockOne cursor = do
         $  "Encountered: "
         <> show other
         <> " in a block. Hopefully it's ok!"
-      traceM $ "I'll interpret it as a normal expression!"
+      traceM "I'll interpret it as a normal expression!"
       -- it's not a declaration
       -- so rewrite it as `let _ = <expr> in...`
 
@@ -194,7 +194,7 @@ desugarTopLevelFunction cursor = do
 
 desugarParameters
   :: MonadError DesugarError m => [T.CursorK 'ParmDecl] -> m (Expr -> Expr)
-desugarParameters parameters = foldlM go id parameters
+desugarParameters = foldlM go id
  where
   go
     :: MonadError DesugarError m
@@ -204,7 +204,7 @@ desugarParameters parameters = foldlM go id parameters
   go cont cursor = do
     let name = Name $ decodeUtf8 $ cursorSpelling $ T.withoutKind cursor
     let clangType = Just $ T.cursorType cursor
-    let lam body = Lam (T.withoutKind cursor) clangType name body
+    let lam = Lam (T.withoutKind cursor) clangType name
 
     pure $ cont . lam
 

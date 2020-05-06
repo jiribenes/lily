@@ -1,6 +1,7 @@
-{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+
 module Core.Located
   ( Location(..)
   , Located(..)
@@ -9,17 +10,14 @@ where
 
 import           Language.C.Clang.Location
 import           Core.Syntax
-import           Language.C.Clang.Cursor        ( cursorExtent
-                                                , Cursor
-                                                )
+import           Language.C.Clang.Cursor        ( cursorExtent )
 import           Data.Maybe                     ( fromJust )
 import           Control.Lens                   ( to
                                                 , (^.)
-                                                , view
                                                 )
 
 newtype Range = Range { unRange :: (Location, Location) }
-    deriving (Show, Eq)
+    deriving stock (Show, Eq)
 
 class Located a where
     loc :: a -> Location
