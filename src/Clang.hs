@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -70,6 +71,14 @@ someSpelling = cursorSpelling . unwrapSomeFunction
 isCanonical :: Cursor -> Bool
 isCanonical c = cursorCanonical c == c
 
+functionHasBody :: SomeFunctionCursor -> Bool
+functionHasBody =
+  not
+    . null
+    . filter (\child -> cursorKind child == CompoundStmt)
+    . cursorChildren
+    . unwrapSomeFunction
+
 toFunction :: Cursor -> Maybe FunctionCursor
 toFunction = T.matchKind @ 'FunctionDecl
 
@@ -97,6 +106,19 @@ calledFunctions = referencedCalls . functionDecls
 allFunctions :: Fold Cursor SomeFunctionCursor
 allFunctions = cursorDescendantsF . folding toSomeFunction
    -- . filtered ({-isFromMainFile . -} rangeStart . T.cursorExtent)
+
+getFunctionBody
+  :: SomeFunctionCursor -> TranslationUnit -> Maybe SomeFunctionCursor
+getFunctionBody def tu = translationUnitCursor tu ^? functionBodyF def
+ where
+  functionBodyF :: SomeFunctionCursor -> Fold Cursor SomeFunctionCursor
+  functionBodyF def = allFunctions . filtered
+    (\x ->
+      (  cursorCanonical (unwrapSomeFunction x)
+      == (unwrapSomeFunction def)
+      && functionHasBody x
+      )
+    )
 
 type FunctionGraphNode = (SomeFunctionCursor, ByteString, [ByteString])
 type FunctionGraph = [FunctionGraphNode]
@@ -127,7 +149,7 @@ recursiveComponents tu =
  where
   intoGraphNode :: SomeFunctionCursor -> FunctionGraphNode
   intoGraphNode fnDecl =
-    ( fnDecl
+    ( fromJust $ getFunctionBody fnDecl tu
     , fnDecl & someUSR
     , (fnDecl & unwrapSomeFunction) ^.. calledFunctions . to someUSR
     )
@@ -140,10 +162,13 @@ printAST tu = go 0 $ translationUnitCursor tu
     let kind     = show $ cursorKind c
     let spelling = BS.unpack $ cursorSpelling c
     let canon    = if isCanonical c then " [canon]" else ""
+    let hasBody =
+          maybe "" (\x -> if functionHasBody x then "[has body]" else "")
+            $ toSomeFunction c
 
     putStrLn $ indent i kind <> canon <> if null spelling
       then ""
-      else ", " <> spelling
+      else ", " <> spelling <> if null hasBody then "" else ", " <> hasBody
     traverse_ (go (i + 4)) $ cursorChildren c
 
   indent :: Int -> String -> String

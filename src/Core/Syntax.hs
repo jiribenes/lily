@@ -42,9 +42,8 @@ data BuiltinExpr = BuiltinBinOp BinOp
 instance Show BuiltinExpr where
   show (BuiltinBinOp bop) =
     "@builtin_binop_" <> drop (length "BinOp") (show bop)
-  show (BuiltinUnOp uop) =
-    "@builtin_unop_" <> drop (length "UnOp") (show uop)
-  show BuiltinUnit = "@builtin_unit"
+  show (BuiltinUnOp uop) = "@builtin_unop_" <> drop (length "UnOp") (show uop)
+  show BuiltinUnit       = "@builtin_unit"
 
 deriving instance (Functor (Expr' t))
 
@@ -73,7 +72,7 @@ type TopLevel = TopLevel' (Maybe ClangType) Cursor
 instance Show TopLevel where
   show (TLLet l) = show l
   show (TLLetRecursive lets) =
-    "recgroup " <> unlines (("\t" <>) . show <$> lets)
+    "recgroup\n" <> unlines (("\t" <>) . show <$> lets)
   show (TLLetNoBody _ name) = "# let " <> show name
 
 -- | TODO: Use https://hackage.haskell.org/package/prettyprinter

@@ -72,11 +72,10 @@ desugarExpr cursor = case cursorKind cursor of
 
     pure $ foldl1 (App cursor) exprs
 
-  IntegerLiteral ->
-    pure $ Literal cursor
+  IntegerLiteral -> pure $ Literal cursor
 
-  FirstExpr -> desugarSingleChild cursor
-  other     -> error $ "found: " <> show other
+  FirstExpr      -> desugarSingleChild cursor
+  other          -> error $ "found: " <> show other
 
 desugarBlock :: MonadError DesugarError m => T.CursorK 'CompoundStmt -> m Expr
 desugarBlock cursor = do
@@ -93,72 +92,66 @@ desugarBlock cursor = do
   longFunc = foldlM go id $ T.cursorChildren cursor
 
 desugarStmt :: MonadError DesugarError m => Cursor -> m Expr
-desugarStmt cursor =
-  case cursorKind cursor of
-    CompoundStmt ->
-      desugarBlock $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
-    _ -> do
-      stmtCont <- desugarBlockOne cursor
-      pure $ stmtCont $ unit cursor
-
+desugarStmt cursor = case cursorKind cursor of
+  CompoundStmt ->
+    desugarBlock $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
+  _ -> do
+    stmtCont <- desugarBlockOne cursor
+    pure $ stmtCont $ unit cursor
 
 desugarBlockOne :: MonadError DesugarError m => Cursor -> m (Expr -> Expr)
-desugarBlockOne cursor =
-  case cursorKind cursor of
-    DeclStmt -> do
-      let [child] = cursorChildren cursor
+desugarBlockOne cursor = case cursorKind cursor of
+  DeclStmt -> do
+    let [child] = cursorChildren cursor
 
-      case cursorKind child of
-        VarDecl -> do
-          let [grandchild] = cursorChildren child
+    case cursorKind child of
+      VarDecl -> do
+        let [grandchild] = cursorChildren child
 
-          expr <- desugarExpr grandchild
+        expr <- desugarExpr grandchild
 
-          let name = Name $ decodeUtf8 $ cursorSpelling child
+        let name = Name $ decodeUtf8 $ cursorSpelling child
 
-          pure $ \rest -> LetIn child name expr rest
-        _ -> throwError UnknownDeclarationKindInBlock
+        pure $ \rest -> LetIn child name expr rest
+      _ -> throwError UnknownDeclarationKindInBlock
 
-    ReturnStmt -> do
-      let [child] = cursorChildren cursor
+  ReturnStmt -> do
+    let [child] = cursorChildren cursor
 
-      expr <- desugarExpr child
+    expr <- desugarExpr child
 
-      pure $ \_ -> expr
+    pure $ \_ -> expr
 
-    IfStmt -> do
-      let children = cursorChildren cursor
+  IfStmt -> do
+    let children = cursorChildren cursor
 
-      case children of
-        [cond, thn] -> do
-          condition <- desugarExpr cond
-          expr      <- desugarStmt thn
+    case children of
+      [cond, thn] -> do
+        condition <- desugarExpr cond
+        expr      <- desugarStmt thn
 
-          pure $ \_ -> If cursor condition expr (unit cursor)
+        pure $ \_ -> If cursor condition expr (unit cursor)
 
-        [cond, thn, els] -> do
-          condition <- desugarExpr cond
+      [cond, thn, els] -> do
+        condition <- desugarExpr cond
 
-          expr1     <- desugarStmt thn
-          expr2     <- desugarStmt els
+        expr1     <- desugarStmt thn
+        expr2     <- desugarStmt els
 
-          pure $ \_ -> If cursor condition expr1 expr2
+        pure $ \_ -> If cursor condition expr1 expr2
 
-        _ -> throwError InvalidIfShape
+      _ -> throwError InvalidIfShape
 
-    other -> do
-      traceM
-        $  "Encountered: "
-        <> show other
-        <> " in a block. Hopefully it's ok!"
-      traceM "I'll interpret it as a normal expression!"
-      -- it's not a declaration
-      -- so rewrite it as `let _ = <expr> in...`
+  other -> do
+    traceM $ "Encountered: " <> show other <> " in a block. Hopefully it's ok!"
+    traceM "I'll interpret it as a normal expression!"
+    -- it's not a declaration
+    -- so rewrite it as `let _ = <expr> in...`
 
-      expr <- desugarExpr cursor
+    expr <- desugarExpr cursor
 
-      -- TODO: make throwaway name!
-      pure $ \rest -> LetIn cursor (Name "_") expr rest
+    -- TODO: make throwaway name!
+    pure $ \rest -> LetIn cursor (Name "_") expr rest
 
 desugarSingleChild :: MonadError DesugarError m => Cursor -> m Expr
 desugarSingleChild cursor = do
@@ -204,7 +197,7 @@ desugarParameters = foldlM go id
   go cont cursor = do
     let name = Name $ decodeUtf8 $ cursorSpelling $ T.withoutKind cursor
     let clangType = Just $ T.cursorType cursor
-    let lam = Lam (T.withoutKind cursor) clangType name
+    let lam       = Lam (T.withoutKind cursor) clangType name
 
     pure $ cont . lam
 
