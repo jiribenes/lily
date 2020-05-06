@@ -8,15 +8,18 @@
 module Core.Syntax where
 
 
-import           Type (Name(..))
-import             ClangType
-import Language.C.Clang.Cursor (cursorKind, cursorSpelling, Cursor)
-import Control.Lens
-import Data.Functor (($>))
-import Clang
-import Data.Maybe (fromJust)
-import qualified Data.ByteString.Char8 as BS
-import Data.Void (Void)
+import           Type                           ( Name(..) )
+import           ClangType
+import           Language.C.Clang.Cursor        ( cursorKind
+                                                , cursorSpelling
+                                                , Cursor
+                                                )
+import           Control.Lens
+import           Data.Functor                   ( ($>) )
+import           Clang
+import           Data.Maybe                     ( fromJust )
+import qualified Data.ByteString.Char8         as BS
+import           Data.Void                      ( Void )
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
@@ -28,7 +31,7 @@ data Expr' t c  = Var c Name
                | Literal c
                | If c (Expr' t c) (Expr' t c) (Expr' t c)
                | Fix c (Expr' t c)
-               | Builtin c BuiltinExpr 
+               | Builtin c BuiltinExpr
 
 --          | Ctor Name Expr
 --          | Elim Name [Name] Expr Expr
@@ -40,9 +43,11 @@ data BuiltinExpr = BuiltinBinOp BinOp
   deriving (Eq, Ord)
 
 instance Show BuiltinExpr where
-  show (BuiltinBinOp bop) = "@builtin_binop_" <> (drop (length "BinOp") $ show bop)
-  show (BuiltinUnOp uop)  = "@builtin_unop_" <> (drop (length "UnOp") $ show uop)
-  show BuiltinUnit        = "@builtin_unit"
+  show (BuiltinBinOp bop) =
+    "@builtin_binop_" <> (drop (length "BinOp") $ show bop)
+  show (BuiltinUnOp uop) =
+    "@builtin_unop_" <> (drop (length "UnOp") $ show uop)
+  show BuiltinUnit = "@builtin_unit"
 
 deriving instance (Functor (Expr' t))
 
@@ -55,41 +60,39 @@ data Let t c = Let c Name (Expr' t c)
 deriving instance (Functor (Let t))
 
 instance Show (Let t Cursor) where
-  show (Let _ name expr) =
-    "let " <> show name <> " = " <> show expr
+  show (Let _ name expr) = "let " <> show name <> " = " <> show expr
 
 data TopLevel' t c = TLLet (Let t c)
                    | TLLetRecursive [Let t c]
                    | TLLetNoBody c Name
   deriving (Eq, Ord)
 
-makePrisms ''TopLevel'  
+makePrisms ''TopLevel'
 
 deriving instance (Functor (TopLevel' t))
 
 type TopLevel = TopLevel' (Maybe ClangType) Cursor
 
 instance Show TopLevel where
-  show (TLLet l) =
-    show l
+  show (TLLet l) = show l
   show (TLLetRecursive lets) =
     "recgroup " <> unlines (("\t" <>) . show <$> lets)
-  show (TLLetNoBody _ name) =
-    "# let " <> show name
+  show (TLLetNoBody _ name) = "# let " <> show name
 
 -- | TODO: Use https://hackage.haskell.org/package/prettyprinter
 -- Not because it's easy, but because this looks horrible with longer functions.
 -- And that's a "bad thing"^TM
 instance Show (Expr' t Cursor) where
-  show (Var _ name     ) = show name
-  show (App _ e1   e2  ) = "(" <> show e1 <> " " <> show e2 <> ")"
+  show (Var _ name       ) = show name
+  show (App _ e1 e2      ) = "(" <> show e1 <> " " <> show e2 <> ")"
   show (Lam _ _ name expr) = "\\" <> show name <> " -> " <> show expr
   show (LetIn _ name e1 e2) =
     "let " <> show name <> " = " <> show e1 <> " in\n" <> show e2
   show (If _ cond thn els) =
     "if " <> show cond <> " then " <> show thn <> " else " <> show els
-  show (Literal c) = let spelling = BS.unpack $ cursorSpelling c in
-    if null spelling then "<" <> (show $ cursorKind c) <> ">" else spelling
+  show (Literal c) =
+    let spelling = BS.unpack $ cursorSpelling c
+    in  if null spelling then "<" <> (show $ cursorKind c) <> ">" else spelling
   {-show (Ctor n e  ) = "(" <> show n <> " " <> show e <> ")"
   show (Elim k xs e1 e2) =
     "letelim "
@@ -101,25 +104,25 @@ instance Show (Expr' t Cursor) where
       <> " in "
       <> show e2-}
   show (Builtin _ be) = show be
-  show _ = error "whoops"
+  show _              = error "whoops"
 
 class HasCursor a where
   cursorL :: Lens' a Cursor
 
 instance HasCursor (CursorExpr t) where
   cursorL = lens getter setter
-    where
-      getter :: CursorExpr t -> Cursor
-      getter = \case
-        Var c _ -> c
-        App c _ _ -> c
-        Lam c _ _ _ -> c
-        LetIn c _ _ _ -> c
-        Literal c -> c
-        If c _ _ _ -> c
-        Fix c _ -> c
-      setter :: CursorExpr t -> Cursor -> CursorExpr t
-      setter c newCursor = c $> newCursor
+   where
+    getter :: CursorExpr t -> Cursor
+    getter = \case
+      Var c _       -> c
+      App c _ _     -> c
+      Lam   c _ _ _ -> c
+      LetIn c _ _ _ -> c
+      Literal c     -> c
+      If c _ _ _    -> c
+      Fix c _       -> c
+    setter :: CursorExpr t -> Cursor -> CursorExpr t
+    setter c newCursor = c $> newCursor
 
 -- this instance is a bit moot, but...
 instance HasCursor Cursor where
@@ -128,19 +131,19 @@ instance HasCursor Cursor where
 instance HasCursor (Let t Cursor) where
   cursorL = lens getter setter
    where
-     getter :: Let t Cursor -> Cursor
-     getter (Let c _ _) = c
-     setter :: Let t Cursor -> Cursor -> Let t Cursor
-     setter l newCursor = l $> newCursor 
+    getter :: Let t Cursor -> Cursor
+    getter (Let c _ _) = c
+    setter :: Let t Cursor -> Cursor -> Let t Cursor
+    setter l newCursor = l $> newCursor
 
 instance HasCursor TopLevel where
   cursorL = lens getter setter
    where
     getter :: TopLevel -> Cursor
     getter = \case
-      TLLet l -> view cursorL l
-      TLLetRecursive (l:_) -> view cursorL l
-      TLLetNoBody c _ -> c
+      TLLet          l       -> view cursorL l
+      TLLetRecursive (l : _) -> view cursorL l
+      TLLetNoBody c _        -> c
     setter :: TopLevel -> Cursor -> TopLevel
     setter c newCursor = c $> newCursor
 

@@ -17,12 +17,16 @@ import           Infer                          ( inferTop
                                                 )
 import           Type                           ( nameFromBS )
 import           Data.Graph                     ( SCC(..) )
-import           Data.Foldable                  (for_,  foldlM )
+import           Data.Foldable                  ( for_
+                                                , foldlM
+                                                )
 import           Data.Text.Encoding             ( decodeUtf8 )
 import           Data.Function                  ( (&) )
-import Language.C.Clang.Cursor (CursorKind(FunctionDecl), translationUnitCursor)
+import           Language.C.Clang.Cursor        ( CursorKind(FunctionDecl)
+                                                , translationUnitCursor
+                                                )
 import qualified Language.C.Clang.Cursor.Typed as T
-import Data.Maybe (fromJust)
+import           Data.Maybe                     ( fromJust )
 
 lily :: FilePath -> IO ()
 lily filepath = do
@@ -35,9 +39,13 @@ lily filepath = do
   print scc
 
   putStrLn "----------------------"
-  case desugarTopLevel $ fmap (fromJust . T.matchKind @'FunctionDecl . unwrapSomeFunction) <$> scc of
-    Right x -> for_ x print
-    Left err -> putStrLn $ "Desugaring failed! Error: " <> show err 
+  case
+      desugarTopLevel
+      $   fmap (fromJust . T.matchKind @ 'FunctionDecl . unwrapSomeFunction)
+      <$> scc
+    of
+      Right x   -> for_ x print
+      Left  err -> putStrLn $ "Desugaring failed! Error: " <> show err
 {-
   let initialEnv = mempty
   finalEnv <- foldlM go initialEnv scc

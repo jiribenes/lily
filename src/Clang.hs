@@ -139,9 +139,11 @@ printAST tu = go 0 $ translationUnitCursor tu
   go i c = do
     let kind     = show $ cursorKind c
     let spelling = BS.unpack $ cursorSpelling c
-    let canon = if isCanonical c then " [canon]" else ""
+    let canon    = if isCanonical c then " [canon]" else ""
 
-    putStrLn $ (indent i kind) <> canon <> if null spelling then "" else ", " <> spelling
+    putStrLn $ (indent i kind) <> canon <> if null spelling
+      then ""
+      else ", " <> spelling
     traverse_ (go (i + 4)) $ cursorChildren c
 
   indent :: Int -> String -> String

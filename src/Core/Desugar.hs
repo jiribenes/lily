@@ -24,10 +24,12 @@ import           Type                           ( Name(..) )
 import           Data.Text.Encoding             ( decodeUtf8 )
 import           Data.Foldable                  ( foldlM )
 import           Control.Lens
-import Debug.Trace (traceShowId, traceM)
-import Language.C.Clang.Location (Location)
-import qualified Data.Graph as G
-import Control.Lens.Extras (is)
+import           Debug.Trace                    ( traceShowId
+                                                , traceM
+                                                )
+import           Language.C.Clang.Location      ( Location )
+import qualified Data.Graph                    as G
+import           Control.Lens.Extras            ( is )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -81,7 +83,8 @@ desugarBlock cursor = do
   result <- longFunc
   pure $ result $ unit (T.withoutKind cursor)
  where
-  go :: MonadError DesugarError m => (Expr -> Expr) -> Cursor -> m (Expr -> Expr)
+  go
+    :: MonadError DesugarError m => (Expr -> Expr) -> Cursor -> m (Expr -> Expr)
   go cont c = do
     resultFn <- desugarBlockOne c
     pure $ cont . resultFn
@@ -91,11 +94,12 @@ desugarBlock cursor = do
 
 desugarStmt :: MonadError DesugarError m => Cursor -> m Expr
 desugarStmt cursor = do
-    case cursorKind cursor of
-        CompoundStmt -> desugarBlock $ fromJust $ T.matchKind @'CompoundStmt $ cursor
-        _ -> do
-            stmtCont <- desugarBlockOne cursor
-            pure $ stmtCont $ unit cursor
+  case cursorKind cursor of
+    CompoundStmt ->
+      desugarBlock $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
+    _ -> do
+      stmtCont <- desugarBlockOne cursor
+      pure $ stmtCont $ unit cursor
 
 
 desugarBlockOne :: MonadError DesugarError m => Cursor -> m (Expr -> Expr)
@@ -126,28 +130,31 @@ desugarBlockOne cursor = do
       let children = cursorChildren cursor
 
       case children of
-          [cond, thn] -> do
-              condition <- desugarExpr cond
-              expr <- desugarStmt thn
+        [cond, thn] -> do
+          condition <- desugarExpr cond
+          expr      <- desugarStmt thn
 
-              pure $ \_ -> If cursor condition expr (unit cursor)
+          pure $ \_ -> If cursor condition expr (unit cursor)
 
-          [cond, thn, els] -> do
-              condition <- desugarExpr cond
+        [cond, thn, els] -> do
+          condition <- desugarExpr cond
 
-              expr1 <- desugarStmt thn
-              expr2 <- desugarStmt els
+          expr1     <- desugarStmt thn
+          expr2     <- desugarStmt els
 
-              pure $ \_ -> If cursor condition expr1 expr2
+          pure $ \_ -> If cursor condition expr1 expr2
 
-          _ -> throwError InvalidIfShape    
+        _ -> throwError InvalidIfShape
 
     other -> do
-      traceM $ "Encountered: " <> show other <> " in a block. Hopefully it's ok!"
+      traceM
+        $  "Encountered: "
+        <> show other
+        <> " in a block. Hopefully it's ok!"
       traceM $ "I'll interpret it as a normal expression!"
       -- it's not a declaration
       -- so rewrite it as `let _ = <expr> in...`
-      
+
       expr <- desugarExpr cursor
 
       -- TODO: make throwaway name!
@@ -174,16 +181,16 @@ desugarTopLevelFunction cursor = do
   let name          = Name $ decodeUtf8 $ cursorSpelling untypedCursor
 
   case untypedCursor ^.. bodyF of
-      [body] -> do
+    [body] -> do
 
-        functionHeader <- desugarParameters parameters
-        functionBody   <- desugarBlock body
+      functionHeader <- desugarParameters parameters
+      functionBody   <- desugarBlock body
 
-        let function = functionHeader functionBody
+      let function = functionHeader functionBody
 
-        pure $ TLLet $ Let untypedCursor name function
-      [] -> pure $ TLLetNoBody untypedCursor name   
-      _ -> throwError WeirdFunctionBody
+      pure $ TLLet $ Let untypedCursor name function
+    [] -> pure $ TLLetNoBody untypedCursor name
+    _  -> throwError WeirdFunctionBody
 
 desugarParameters
   :: MonadError DesugarError m => [T.CursorK 'ParmDecl] -> m (Expr -> Expr)
@@ -201,12 +208,13 @@ desugarParameters parameters = foldlM go id parameters
 
     pure $ cont . lam
 
-desugarSCCTopLevel :: MonadError DesugarError m => G.SCC FunctionCursor -> m TopLevel
-desugarSCCTopLevel (G.AcyclicSCC cursor) = desugarTopLevelFunction cursor
-desugarSCCTopLevel (G.CyclicSCC cursors) = do
-    topLevelFunctions <- traverse desugarTopLevelFunction cursors
-    let properFunctions = topLevelFunctions ^.. each . folding (\x -> x ^? _TLLet)
-    properFunctions & TLLetRecursive & pure
+desugarSCCTopLevel
+  :: MonadError DesugarError m => G.SCC FunctionCursor -> m TopLevel
+desugarSCCTopLevel (G.AcyclicSCC cursor ) = desugarTopLevelFunction cursor
+desugarSCCTopLevel (G.CyclicSCC  cursors) = do
+  topLevelFunctions <- traverse desugarTopLevelFunction cursors
+  let properFunctions = topLevelFunctions ^.. each . folding (preview _TLLet)
+  properFunctions & TLLetRecursive & pure
 
 desugarTopLevel :: [G.SCC FunctionCursor] -> Either DesugarError [TopLevel]
 desugarTopLevel = traverse desugarSCCTopLevel
