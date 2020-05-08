@@ -59,7 +59,7 @@ import           Data.Text.Encoding             ( decodeUtf8
 import           Language.C.Clang.Type          ( typeResultType )
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
-  deriving (Eq, Show)
+  deriving stock (Eq, Show)
   deriving newtype (Semigroup, Monoid)
 
 makeLenses ''InferEnv
@@ -68,13 +68,13 @@ makeLenses ''InferEnv
 type InferMonos = S.Set TVar
 
 data InferError = FromSolve SolveError
-               | UnboundVariables [Name]
-               | WrongPredicate Pred
-               | WrongConstraint [Constraint]
-               | WrongConstructor Name
-               | Weirdness
-               | UnexpectedParameterDeclarationOutsideFunction
-               | UnknownASTNodeKind CursorKind
+                | UnboundVariables [Name]
+                | WrongPredicate Pred
+                | WrongConstraint [Constraint]
+                | WrongConstructor Name
+                | Weirdness -- TODO: elaborate on this further!
+                | UnexpectedParameterDeclarationOutsideFunction
+                | UnknownASTNodeKind CursorKind
 
 instance Show InferError where
   show (FromSolve x) = show x
@@ -109,10 +109,12 @@ inferExpr env expr = case runInfer (inferType env expr) of
 checkPred :: ClassEnv -> Pred -> Bool
 checkPred classes pred = pred `S.member` classes
 
+isConcrete :: Type -> Bool
 isConcrete (TCon _ ) = True
 isConcrete (TAp x y) = isConcrete x && isConcrete y
 isConcrete (TVar _ ) = False
 
+isComplete :: Pred -> Bool
 isComplete (IsIn _ ts) = all isConcrete ts
 
 -- | Take the accumulated constraints and run a solver over them
@@ -139,7 +141,7 @@ inferType env expr = do
   let cs' =
         [ CExpInst t s
         | (x, s) <- env ^. typeEnv . to M.toList
-        , t      <- A.lookup x as
+        , t      <- x `A.lookup` as
         ]
 
   -- solve all constraints together and get the resulting substitution
@@ -183,6 +185,7 @@ makeFn2 a b = typeArrow `TAp` a `TAp` b
 makeFn3 :: Type -> Type -> Type -> Type
 makeFn3 a b c = typeArrow `TAp` a `TAp` makeFn2 b c
 
+makeArrow :: Type -> Type -> Type -> Type
 makeArrow x f y = f `TAp` x `TAp` y
 
 leq :: Type -> A.Assumption Type -> [Constraint]
@@ -195,14 +198,10 @@ wkn x t as | x `A.notMember` as = [CUn t]
 unrestricted :: A.Assumption Type -> [Constraint]
 unrestricted (A.Assumption as) = CUn . snd <$> as
 
--- Note: this can be made pointfree, but I don't think it's worth the effort...
 freshFun :: Infer (Type, [Constraint])
 freshFun = do
   f <- freshType arrowKind
-  pure (f, [fromPred $ predFun f])
-
-cand :: [Constraint] -> [Constraint]
-cand xs = {-[CAnd-}xs{-]-}
+  pure (f, [fromPred $ PFun f])
 
 -- | Take an expression and produce assumptions, result type and constraints to be solved
 -- TODO: could this be nicer and more specific by using _singletons_ directly?

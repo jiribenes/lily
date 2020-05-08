@@ -1,5 +1,7 @@
+{-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances #-}
 
@@ -14,6 +16,8 @@ import           Data.String                    ( IsString )
 import           Data.ByteString.Char8          ( ByteString )
 import           Data.Text.Encoding             ( decodeUtf8 )
 import qualified Data.Text                     as T
+import           Data.List.NonEmpty             ( NonEmpty )
+import qualified Data.List.NonEmpty            as NE
 
 newtype Name = Name { unName :: Text }
   deriving newtype (Eq, Ord, IsString)
@@ -58,6 +62,8 @@ typeUnit :: Type
 typeUnit = TCon $ TC "Unit" StarKind
 typeInt :: Type
 typeInt = TCon $ TC "Int" StarKind
+typeUInt :: Type
+typeUInt = TCon $ TC "UInt" StarKind
 typeBool :: Type
 typeBool = TCon $ TC "Bool" StarKind
 typeChar :: Type
@@ -88,21 +94,21 @@ typeUnArrow :: Type
 typeUnArrow = TCon conUnArrow
 
 -- | (typeclass) Predicate 
-data Pred = IsIn Name [Type] deriving stock (Eq, Ord)
+data Pred = IsIn Name (NonEmpty Type) deriving stock (Eq, Ord)
 
 instance Show Pred where
-  show (IsIn "Geq" [x, y]) = show x <> " ⩾ " <> show y
-  show (IsIn n     ts    ) = show n <> " " <> unwords (show <$> ts)
+  show (PGeq x y ) = show x <> " ⩾ " <> show y
+  show (IsIn n ts) = show n <> " " <> (unwords $ NE.toList (show <$> ts))
 
 -- constructors for the four most used predicates
-predFun :: Type -> Pred
-predFun x = IsIn "Fun" [x]
-predGeq :: Type -> Type -> Pred
-predGeq x y = IsIn "Geq" [x, y]
-predUn :: Type -> Pred
-predUn x = IsIn "Un" [x]
-predNum :: Type -> Pred
-predNum x = IsIn "Num" [x]
+pattern PFun :: Type -> Pred
+pattern PFun x <- IsIn "Fun" [x] where PFun x = IsIn "Fun" [x]
+pattern PUn :: Type -> Pred
+pattern PUn x <- IsIn "Un" [x] where PUn x = IsIn "Un" [x]
+pattern PGeq :: Type -> Type -> Pred
+pattern PGeq x y <- IsIn "Geq" [x, y] where PGeq x y = IsIn "Geq" [x, y]
+pattern PNum :: Type -> Pred
+pattern PNum x <- IsIn "Num" [x] where PNum x = IsIn "Num" [x]
 
 -- | Qualified `a` is an `a` with a list of predicates
 data Qual a = [Pred] :=> a deriving stock (Eq, Ord)
@@ -127,7 +133,7 @@ showPretty ps ((TCon c) `TAp` a `TAp` b)
 showPretty ps (f `TAp` a `TAp` b)
   | isOnlyFun ps f
   = "(" <> showPretty ps a <> " -> " <> showPretty ps b <> ")"
-  | predFun f `S.member` ps
+  | PFun f `S.member` ps
   = "("
     <> showPretty ps a
     <> " -"
@@ -142,7 +148,7 @@ showPretty ps (TAp a b) =
 
 
 isOnlyFun :: S.Set Pred -> Type -> Bool
-isOnlyFun ps t = S.singleton (predFun t) == relevantPreds ps t
+isOnlyFun ps t = S.singleton (PFun t) == relevantPreds ps t
 relevantPreds :: S.Set Pred -> Type -> S.Set Pred
 relevantPreds ps t = (\(IsIn _ xs) -> t `elem` xs) `S.filter` ps
 
@@ -159,7 +165,6 @@ instance Show Scheme where
     showKind k = case k of
       StarKind      -> ""
       ArrowKind _ _ -> ": " <> show k
-
 
 -- | Substitution is a map from type variables to actual types
 newtype Subst = Subst (M.Map TVar Type) deriving stock (Eq, Ord, Show)
@@ -194,6 +199,9 @@ instance Substitutable Scheme where
     where s' = Subst (foldr M.delete s as)
 
 instance Substitutable a => Substitutable [a] where
+  apply = fmap . apply
+
+instance Substitutable a => Substitutable (NonEmpty a) where
   apply = fmap . apply
 
 instance (Ord a, Substitutable a) => Substitutable (S.Set a) where

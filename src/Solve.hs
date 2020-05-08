@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE PatternSynonyms #-}
 
@@ -32,12 +33,14 @@ import           MonadFresh
 import           Unify
 
 import           Debug.Trace
+import           Data.List.NonEmpty             ( NonEmpty )
+import qualified Data.List.NonEmpty            as NE
 
 data Constraint = CEq Type Type
                 | CExpInst Type Scheme
                 | CImpInst Type (S.Set TVar) Type
                 | CCtor Name Type -- new addition: `is constructor of`
-                | CIn Name [Type]
+                | CIn Name (NonEmpty Type)
                 deriving (Ord, Eq)
 
 instance Show Constraint where
@@ -46,7 +49,7 @@ instance Show Constraint where
   show (CImpInst t1 mono t2) =
     show t1 <> " ≼{" <> show (S.toList mono) <> "} " <> show t2
   show (CCtor name t ) = show name <> " c " <> show t
-  show (CIn   name ts) = show name <> " " <> unwords (show <$> ts)
+  show (CIn   name ts) = show name <> " " <> (unwords $ NE.toList $ show <$> ts)
 
 instance ActiveTypeVars Constraint where
   atv (CEq t1 t2) = ftv t1 `S.union` ftv t2
@@ -54,7 +57,7 @@ instance ActiveTypeVars Constraint where
     ftv t1 `S.union` (ftv monos `S.intersection` ftv t2)
   atv (CExpInst t s ) = ftv t `S.union` ftv s
   atv (CCtor    n t ) = ftv t
-  atv (CIn      _ ts) = S.empty  -- this should be correct as we don't really work with these
+  atv (CIn      _ ts) = foldr1 S.union (ftv <$> ts) -- S.empty  -- this should be correct as we don't really work with these
 
 instance Substitutable Constraint where
   apply sub (CEq      t1 t2) = CEq (apply sub t1) (apply sub t2)
@@ -80,14 +83,14 @@ mkSolveEnv :: SolveEnv
 mkSolveEnv = SolveEnv { _classEnv = mkClassEnv, _ctorEnv = mkCtorEnv }
  where
   mkClassEnv = S.fromList
-    [ predNum typeInt
-    , predUn typeChar
-    , predUn typeInt
-    , predUn typeBool
-    , predUn typeUnArrow
-    , predFun typeArrow
-    , predFun typeLinArrow
-    , predFun typeUnArrow
+    [ PNum typeInt
+    , PUn typeChar
+    , PUn typeInt
+    , PUn typeBool
+    , PUn typeUnArrow
+    , PFun typeArrow
+    , PFun typeLinArrow
+    , PFun typeUnArrow
     ]
   mkCtorEnv = M.fromList [("Pair", pairCtor), ("Pointed", pointedCtor)]
 
@@ -114,15 +117,17 @@ pointedCtor = Forall
   (a   , b   ) = (TVar aVar, TVar bVar)
   pointedType  = TCon (TC "Pointed" (ArrowKind StarKind StarKind))
 
-
+-- these patterns are bidirectional in this weird way
+-- only because of using OverloadedLists
+--
+-- otherwise they should be bidirectional automatically with `pattern CX x = CIn "X" [x]`
+-- sigh.
 pattern CFun :: Type -> Constraint
-pattern CFun x = CIn "Fun" [x]
+pattern CFun x <- CIn "Fun" [x] where CFun x = CIn "Fun" [x]
 pattern CUn :: Type -> Constraint
-pattern CUn x = CIn "Un" [x]
+pattern CUn x <- CIn "Un" [x] where CUn x = CIn "Un" [x]
 pattern CGeq :: Type -> Type -> Constraint
-pattern CGeq x y = CIn "Geq" [x, y]
-pattern CMut :: Type -> Constraint
-pattern CMut x = CIn "Mut" [x]
+pattern CGeq x y <- CIn "Geq" [x, y] where CGeq x y = CIn "Geq" [x, y]
 
 toPreds cs = [ IsIn n ts | CIn n ts <- cs ]
 fromPred (IsIn n ts) = CIn n ts
@@ -163,7 +168,7 @@ solve' (CExpInst t s, cs) = do
   -- (sub, unsolved') <- solve (CEq t s' : cs)
   -- return $ traceShow ("created-sub: ", sub) (sub, unsolved ++ unsolved')
   (s' , preds   ) <- instantiate s
-  (sub, unsolved) <- solve $ (CEq t s' : preds) <> cs
+  (sub, unsolved) <- solve $ CEq t s' : preds <> cs
   pure (sub, unsolved)
 solve' (CCtor n t, cs) = do
   env <- view ctorEnv

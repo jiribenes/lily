@@ -30,6 +30,7 @@ fromClangType clangType = case Clang.typeKind canonicalClangType of
   Clang.Void -> pure typeUnit
   Clang.Bool -> pure typeBool
   Clang.Int  -> pure typeInt
+  Clang.UInt  -> pure typeUInt
   Clang.Pointer ->
     typePointeeType canonicalClangType >>= fromClangType <&> typePtrOf
   other -> error $ unlines

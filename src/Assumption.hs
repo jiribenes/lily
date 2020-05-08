@@ -1,3 +1,4 @@
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
 module Assumption where
 
@@ -9,16 +10,10 @@ import           Data.List                      ( foldl' )
 
 -- | Multimap of assumptions 
 newtype Assumption t = Assumption { unAssumption :: [(Name, t)] }
-    deriving stock (Eq, Ord, Show)
-
-instance Semigroup (Assumption t) where
-  Assumption as <> Assumption bs = Assumption $ as <> bs
-
-instance Monoid (Assumption t) where
-  mempty = empty
+    deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
 
 empty :: Assumption t
-empty = Assumption []
+empty = mempty
 
 singleton :: (Name, t) -> Assumption t
 singleton (n, t) = Assumption [(n, t)]

@@ -73,9 +73,7 @@ isCanonical c = cursorCanonical c == c
 
 functionHasBody :: SomeFunctionCursor -> Bool
 functionHasBody =
-  not
-    . null
-    . filter (\child -> cursorKind child == CompoundStmt)
+  any (\child -> cursorKind child == CompoundStmt)
     . cursorChildren
     . unwrapSomeFunction
 
@@ -267,10 +265,10 @@ data UnOp = UnOpPostInc
            | UnOpImag
            | UnOpExtension
            | UnOpCoawait
-  deriving (Eq, Ord, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 data UnaryFixity = Prefix | Postfix
-  deriving (Eq, Ord, Show, Enum, Bounded)
+  deriving stock (Eq, Ord, Show, Enum, Bounded)
 
 getFixity :: UnOp -> UnaryFixity
 getFixity op = if isPostfixOp op then Postfix else Prefix

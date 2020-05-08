@@ -27,6 +27,7 @@ import           Language.C.Clang.Cursor        ( CursorKind(FunctionDecl)
                                                 )
 import qualified Language.C.Clang.Cursor.Typed as T
 import           Data.Maybe                     ( fromJust )
+import Debug.Trace (traceM)
 
 lily :: FilePath -> IO ()
 lily filepath = do
@@ -46,7 +47,8 @@ lily filepath = do
     of
       Right x   -> for_ x print
       Left  err -> putStrLn $ "Desugaring failed! Error: " <> show err
-{-
+
+  putStrLn "----------------------"
   let initialEnv = mempty
   finalEnv <- foldlM go initialEnv scc
   print finalEnv
@@ -59,4 +61,6 @@ lily filepath = do
         putStrLn $ "Error happened! " <> show err
         pure env
       Right newEnv -> pure newEnv
--}
+  go env (CyclicSCC funcs) = do
+    traceM $ "Ignoring a cyclic dependency for now!" <> (unwords $ show <$> funcs)
+    pure env -- ignore
