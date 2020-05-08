@@ -53,9 +53,9 @@ data BuiltinExpr = BuiltinBinOp BinOp
 
 instance Pretty BuiltinExpr where
   pretty (BuiltinBinOp bop) =
-    "#builtin_binop_" <> (pretty $ drop (length ("BinOp" :: String)) (show bop))
+    "#builtin_binop_" <> pretty (drop (length ("BinOp" :: String)) (show bop))
   pretty (BuiltinUnOp uop) =
-    "#builtin_unop_" <> (pretty $ drop (length ("UnOp" :: String)) (show uop))
+    "#builtin_unop_" <> pretty (drop (length ("UnOp" :: String)) (show uop))
   pretty BuiltinMemberRef      = "#builtin_memberref"
   pretty (BuiltinNew typ) = "#builtin_new" <+> "@" <> PP.parens (pretty typ)
   pretty BuiltinArraySubscript = "#builtin_arrsubscript"
@@ -70,7 +70,7 @@ data Let t c = Let c Name (Expr' t c)
 
 instance Pretty (Let t Cursor) where
   pretty (Let _ name expr) =
-    "let" <+> pretty name <+> "=" <+> (PP.hang 4 $ pretty expr)
+    "let" <+> pretty name <+> "=" <+> PP.hang 4 (pretty expr)
 
 data TopLevel' t c = TLLet (Let t c)
                    | TLLetRecursive [Let t c]
@@ -94,7 +94,7 @@ instance Pretty (Expr' t Cursor) where
   pretty (LetIn _ name e1 e2) =
     "let" <+> pretty name <+> "=" <+> pretty e1 <+> "in" <+> pretty e2
   pretty (If _ cond thn els) = "if" <+> PP.align
-    (PP.vsep $ [pretty cond, "then" <+> pretty thn, "else" <+> pretty els])
+    (PP.vsep [pretty cond, "then" <+> pretty thn, "else" <+> pretty els])
   pretty (Literal c) =
     let spelling = BS.unpack $ cursorSpelling c
     in  if null spelling

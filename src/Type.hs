@@ -134,7 +134,7 @@ data Pred = IsIn Name (NonEmpty Type) deriving stock (Eq, Show, Ord)
 
 instance Pretty Pred where
   pretty (PGeq x y ) = pretty x <+> "⩾" <+> pretty y
-  pretty (IsIn n ts) = pretty n <+> (PP.sep $ NE.toList $ pretty <$> ts)
+  pretty (IsIn n ts) = pretty n <+> PP.sep (NE.toList $ pretty <$> ts)
 
 -- constructors for the four most used predicates
 pattern PFun :: Type -> Pred

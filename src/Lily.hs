@@ -1,4 +1,3 @@
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE KindSignatures #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -18,11 +17,7 @@ import           Infer                          ( inferTop
                                                 )
 import           Type                           ( nameFromBS )
 import           Data.Graph                     ( SCC(..) )
-import           Data.Foldable                  ( traverse_
-                                                , for_
-                                                , foldlM
-                                                )
-import           Data.Function                  ( (&) )
+import           Data.Foldable                  ( foldlM )
 import           Debug.Trace                    ( traceM )
 import           Data.Text.Prettyprint.Doc.Render.Text
                                                 ( putDoc )
@@ -65,7 +60,6 @@ lily filepath = do
         pure env
       Right newEnv -> pure newEnv
   go env (CyclicSCC funcs) = do
-    traceM
-      $  "TODO Ignoring a cyclic dependency for now!"
-      <> (unwords $ show <$> funcs)
+    traceM $ "TODO Ignoring a cyclic dependency for now!" <> unwords
+      (show <$> funcs)
     pure env -- ignore

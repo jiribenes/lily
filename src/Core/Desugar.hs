@@ -26,11 +26,8 @@ import           Type                           ( nameFromBS
                                                 )
 import           Data.Foldable                  ( foldlM )
 import           Control.Lens
-import           Debug.Trace                    ( traceShowM
-                                                , traceM
-                                                )
+import           Debug.Trace                    ( traceM )
 import qualified Data.Graph                    as G
-import           Data.Text.Prettyprint.Doc      ( Pretty(pretty) )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -92,22 +89,20 @@ desugarExpr cursor = case cursorKind cursor of
 
     pure $ foldl1 (App cursor) exprs
 
-  MemberRefExpr -> do
-    case cursorChildren cursor of
-      [child] -> do
-        expr <- desugarExpr child
+  MemberRefExpr -> case cursorChildren cursor of
+    [child] -> do
+      expr <- desugarExpr child
 
-        let memberName = nameFromBS $ cursorSpelling cursor
-        let member     = Var cursor memberName
+      let memberName = nameFromBS $ cursorSpelling cursor
+      let member     = Var cursor memberName
 
-        let memberRef  = Builtin cursor BuiltinMemberRef
+      let memberRef  = Builtin cursor BuiltinMemberRef
 
-        pure $ App cursor (App cursor memberRef expr) member
-      [] -> do
-        traceM
-          "I don't support weird member reference for C++ classes yet! TODO"
-        throwError DesugarWeirdness
-      _ -> throwError DesugarWeirdness
+      pure $ App cursor (App cursor memberRef expr) member
+    [] -> do
+      traceM "I don't support weird member reference for C++ classes yet! TODO"
+      throwError DesugarWeirdness
+    _ -> throwError DesugarWeirdness
 
   IntegerLiteral        -> pure $ Literal cursor
   CharacterLiteral      -> pure $ Literal cursor
@@ -162,23 +157,22 @@ desugarBlockOne cursor = case cursorKind cursor of
 
     pure $ \_ -> expr
 
-  IfStmt -> do
-    case cursorChildren cursor of
-      [cond, thn] -> do
-        condition <- desugarExpr cond
-        expr      <- desugarStmt thn
+  IfStmt -> case cursorChildren cursor of
+    [cond, thn] -> do
+      condition <- desugarExpr cond
+      expr      <- desugarStmt thn
 
-        pure $ \els -> If cursor condition expr els
+      pure $ \els -> If cursor condition expr els
 
-      [cond, thn, els] -> do
-        condition <- desugarExpr cond
+    [cond, thn, els] -> do
+      condition <- desugarExpr cond
 
-        expr1     <- desugarStmt thn
-        expr2     <- desugarStmt els
+      expr1     <- desugarStmt thn
+      expr2     <- desugarStmt els
 
-        pure $ \_ -> If cursor condition expr1 expr2
+      pure $ \_ -> If cursor condition expr1 expr2
 
-      _ -> throwError InvalidIfShape
+    _ -> throwError InvalidIfShape
 
   other -> do
     traceM $ "Encountered: " <> show other <> " in a block. Hopefully it's ok!"
