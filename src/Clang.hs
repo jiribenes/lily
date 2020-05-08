@@ -13,7 +13,9 @@ module Clang
   , createTranslationUnit
   , recursiveComponents
   , FunctionCursor
+  , toFunction
   , FunctionTemplateCursor
+  , toFunctionTemplate
   , SomeFunctionCursor(..)
   , someSpelling
   , someUSR

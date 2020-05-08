@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
@@ -18,18 +19,14 @@ import           Control.Monad.Except           ( throwError
 import qualified Language.C.Clang.Cursor.Typed as T
 import           Data.Maybe                     ( fromJust )
 import           Clang
-import           ClangType
 import           Error
-import           Type                           ( Name(..) )
-import           Data.Text.Encoding             ( decodeUtf8 )
+import           Type                           ( nameFromBS
+                                                , Name(..)
+                                                )
 import           Data.Foldable                  ( foldlM )
 import           Control.Lens
-import           Debug.Trace                    ( traceShowId
-                                                , traceM
-                                                )
-import           Language.C.Clang.Location      ( Location )
+import           Debug.Trace                    ( traceM )
 import qualified Data.Graph                    as G
-import           Control.Lens.Extras            ( is )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -38,7 +35,7 @@ data DesugarError = WeirdFunctionBody
                   | BlockExpected Location
                   | InvalidIfShape
                   | DesugarWeirdness
-    deriving (Show, Eq)
+    deriving stock (Show, Eq)
 
 desugarExpr :: MonadError DesugarError m => Cursor -> m Expr
 desugarExpr cursor = case cursorKind cursor of
@@ -63,7 +60,7 @@ desugarExpr cursor = case cursorKind cursor of
 
     pure $ App cursor unOpBuiltin childExpr
   DeclRefExpr -> do
-    let name = Name $ decodeUtf8 $ cursorSpelling cursor
+    let name = nameFromBS $ cursorSpelling cursor
     pure $ Var cursor name
 
   CallExpr -> do
@@ -110,7 +107,7 @@ desugarBlockOne cursor = case cursorKind cursor of
 
         expr <- desugarExpr grandchild
 
-        let name = Name $ decodeUtf8 $ cursorSpelling child
+        let name = nameFromBS $ cursorSpelling child
 
         pure $ \rest -> LetIn child name expr rest
       _ -> throwError UnknownDeclarationKindInBlock
@@ -171,7 +168,7 @@ desugarTopLevelFunction cursor = do
 
   let untypedCursor = T.withoutKind cursor
   let parameters    = untypedCursor ^.. parameterF
-  let name          = Name $ decodeUtf8 $ cursorSpelling untypedCursor
+  let name          = nameFromBS $ cursorSpelling untypedCursor
 
   case untypedCursor ^.. bodyF of
     [body] -> do
@@ -195,7 +192,7 @@ desugarParameters = foldlM go id
     -> T.CursorK 'ParmDecl
     -> m (Expr -> Expr)
   go cont cursor = do
-    let name = Name $ decodeUtf8 $ cursorSpelling $ T.withoutKind cursor
+    let name      = nameFromBS $ cursorSpelling $ T.withoutKind cursor
     let clangType = Just $ T.cursorType cursor
     let lam       = Lam (T.withoutKind cursor) clangType name
 

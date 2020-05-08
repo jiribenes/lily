@@ -19,25 +19,12 @@ import           ClangType
 import           Error
 
 import           Control.Monad.Except
-import           Control.Monad.Identity
 import           Control.Monad.Reader
-import           Control.Monad.State
 import           Control.Lens
 
-import           Data.List                      ( nub
-                                                , intersect
-                                                , delete
-                                                , find
-                                                , intersperse
-                                                )
-import qualified Data.List.NonEmpty            as NE
-import           Data.Maybe                     ( fromJust
-                                                , listToMaybe
-                                                )
-import           Data.Monoid                    ( (<>) )
-import           Data.Foldable                  ( foldrM
-                                                , fold
-                                                )
+import           Data.List                      ( nub )
+import           Data.Maybe                     ( fromJust )
+import           Data.Foldable                  ( fold )
 import qualified Data.Text                     as Text
 
 import qualified Data.Map                      as M
@@ -53,9 +40,6 @@ import           Language.C.Clang.Cursor        ( cursorSpelling
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
-import           Data.Text.Encoding             ( decodeUtf8
-                                                , encodeUtf8
-                                                )
 import           Language.C.Clang.Type          ( typeResultType )
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
@@ -188,15 +172,18 @@ makeFn3 a b c = typeArrow `TAp` a `TAp` makeFn2 b c
 makeArrow :: Type -> Type -> Type -> Type
 makeArrow x f y = f `TAp` x `TAp` y
 
+-- | Adds a 'Leq t u' constraint for every type 'u' in the assumptions
 leq :: Type -> A.Assumption Type -> [Constraint]
-leq t (A.Assumption as) = (`CGeq` t) . snd <$> as
+leq t = fmap (`CGeq` t) . A.values
 
+-- | Adds a 'Un' constraint if the name is in assumptions
 wkn :: Name -> Type -> A.Assumption Type -> [Constraint]
 wkn x t as | x `A.notMember` as = [CUn t]
            | otherwise          = []
 
+-- | Adds a 'Un' constraint for every type in the assumptions
 unrestricted :: A.Assumption Type -> [Constraint]
-unrestricted (A.Assumption as) = CUn . snd <$> as
+unrestricted = fmap CUn . A.values
 
 freshFun :: Infer (Type, [Constraint])
 freshFun = do
@@ -262,10 +249,9 @@ infer cursor = case cursorKind cursor of
   DeclRefExpr -> do
     tv <- freshType StarKind
 
-    -- TODO: check if this is indeed the correct spelling!
-    let name = decodeUtf8 $ cursorSpelling cursor
+    let name = nameFromBS $ cursorSpelling cursor
     pure
-      ( A.singleton (Name name, tv)
+      ( A.singleton (name, tv)
       , tv  -- Note: We are actually never using the resulting type of this directly -- only indirectly through assumptions!
       , []
       )
@@ -336,8 +322,8 @@ inferSomeFunction cursor = do
   -- TODO: extract this into its own function!
   (paramTypes, paramTVars) <-
     unzip <$> traverse (const $ freshTypeAndTVar StarKind) parameters
-  let paramNames = cursor ^.. parameterF . to
-        (Name . decodeUtf8 . cursorSpelling . T.withoutKind)
+  let paramNames =
+        cursor ^.. parameterF . to (nameFromBS . cursorSpelling . T.withoutKind)
   -- TODO: Why don't ParamDecls have spelling? Investigate/fix!
 
   -- TODO: If we're a generic/template function, then some ParamDecls have a child "TypeRef"

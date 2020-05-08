@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
@@ -8,40 +9,27 @@ module Solve where
 
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-
 import           Control.Monad.Except
-import           Control.Monad.Identity
 import           Control.Monad.Reader
-import           Control.Monad.State
 import           Control.Lens
-
-
-import           Data.List                      ( nub
-                                                , intersect
-                                                , delete
+import           Data.List                      ( delete
                                                 , find
-                                                , intersperse
                                                 )
-import           Data.Maybe                     ( fromJust
-                                                , listToMaybe
-                                                )
-import           Data.Monoid                    ( (<>) )
-import qualified Data.Text                     as T
+import           Data.Maybe                     ( fromJust )
+import           Debug.Trace
+import           Data.List.NonEmpty             ( NonEmpty )
+import qualified Data.List.NonEmpty            as NE
 
 import           Type
 import           MonadFresh
 import           Unify
-
-import           Debug.Trace
-import           Data.List.NonEmpty             ( NonEmpty )
-import qualified Data.List.NonEmpty            as NE
 
 data Constraint = CEq Type Type
                 | CExpInst Type Scheme
                 | CImpInst Type (S.Set TVar) Type
                 | CCtor Name Type -- new addition: `is constructor of`
                 | CIn Name (NonEmpty Type)
-                deriving (Ord, Eq)
+                deriving stock (Ord, Eq)
 
 instance Show Constraint where
   show (CEq      x y) = show x <> " ~ " <> show y
@@ -72,7 +60,7 @@ type Solve a = ReaderT SolveEnv (FreshT Name (Except SolveError)) a
 
 type ClassEnv = S.Set Pred
 type CtorEnv = M.Map Name Scheme
-data SolveEnv = SolveEnv { _classEnv :: ClassEnv, _ctorEnv :: CtorEnv } deriving (Show, Ord, Eq)
+data SolveEnv = SolveEnv { _classEnv :: ClassEnv, _ctorEnv :: CtorEnv } deriving stock (Show, Ord, Eq)
 makeLenses ''SolveEnv
 
 runSolveT

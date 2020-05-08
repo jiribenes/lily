@@ -1,6 +1,24 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
-module Assumption where
+module Assumption
+  ( Assumption
+  , empty
+  , singleton
+  , extend
+  , extendMany
+  , keys
+  , keysSet
+  , values
+  , member
+  , notMember
+  , toSet
+  , intersection
+  , intersectMany
+  , remove
+  , removeMany
+  , Assumption.lookup
+  )
+where
 
 import           Type
 
@@ -31,21 +49,25 @@ keys = map fst . (coerce :: Assumption t -> [(Name, t)])
 keysSet :: Assumption t -> S.Set Name
 keysSet = S.fromList . keys
 
+values :: Assumption t -> [t]
+values = map snd . (coerce :: Assumption t -> [(Name, t)])
+
 member :: Name -> Assumption t -> Bool
 member x = (x `S.member`) . keysSet
 
 notMember :: Name -> Assumption t -> Bool
 notMember x = not . member x
 
-set :: Ord t => Assumption t -> S.Set (Name, t)
-set (Assumption a) = S.fromList a
+toSet :: Ord t => Assumption t -> S.Set (Name, t)
+toSet (Assumption a) = S.fromList a
 
 intersection :: Ord t => Assumption t -> Assumption t -> Assumption t
-intersection as bs = Assumption . S.toList $ S.intersection (set as) (set bs)
+intersection as bs =
+  Assumption . S.toList $ S.intersection (toSet as) (toSet bs)
 
 intersectMany :: Ord t => [Assumption t] -> Assumption t
 intersectMany as =
-  Assumption . S.toList $ foldl' S.intersection S.empty (set <$> as)
+  Assumption . S.toList $ foldl' S.intersection S.empty (toSet <$> as)
 
 remove :: Assumption t -> Name -> Assumption t
 remove (Assumption a) x = Assumption $ filter ((/= x) . fst) a
