@@ -9,21 +9,20 @@
 
 module Type where
 
-import qualified Data.Map                      as M
-import qualified Data.Set                      as S
-import           Data.Text                      ( Text )
-
-import           Data.String                    ( IsString )
 import           Data.ByteString.Char8          ( ByteString )
-import           Data.Text.Encoding             ( decodeUtf8 )
-import qualified Data.Text                     as T
 import           Data.List.NonEmpty             ( NonEmpty )
 import qualified Data.List.NonEmpty            as NE
+import qualified Data.Map                      as M
+import           Data.Maybe                     ( isJust )
+import qualified Data.Set                      as S
+import           Data.String                    ( IsString )
+import           Data.Text                      ( Text )
+import qualified Data.Text                     as T
+import           Data.Text.Encoding             ( decodeUtf8 )
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
-import           Data.Maybe                     ( isJust )
 
 newtype Name = Name { unName :: Text }
   deriving newtype (Eq, Ord, IsString, Pretty)
@@ -173,7 +172,7 @@ extractSpecificArrow _ _ = Nothing
 
 isArrow :: (Type -> Bool) -> Type -> Bool
 isArrow p (f@TVar{} `TAp` _ `TAp` _) = p f
-isArrow _ t = isJust $ extractSpecificArrow isSpecificArrow $ t
+isArrow _ t = isJust $ extractSpecificArrow isSpecificArrow t
 
 -- | Qualified `a` is an `a` with a list of predicates
 data Qual a = [Pred] :=> a deriving stock (Eq, Show, Ord)

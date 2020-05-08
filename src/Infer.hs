@@ -10,42 +10,29 @@
 
 module Infer where
 
-import qualified Assumption                    as A
-import           Type
-import           MonadFresh
-import           Solve
-import           Clang
-import           ClangType
-import           Error
-import           Core.Syntax
-
+import           Control.Lens
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           Control.Lens
-
 import           Data.List                      ( nub )
-import           Data.Maybe                     ( fromJust )
-import           Data.Foldable                  ( fold )
-import qualified Data.Text                     as Text
-
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-import           Language.C.Clang.Cursor        ( cursorSpelling
-                                                , cursorChildrenF
-                                                , cursorChildren
-                                                , cursorKind
-                                                , cursorType
-                                                , Cursor
-                                                , CursorKind(..)
-                                                )
-import qualified Language.C.Clang.Cursor.Typed as T
-
-import           Debug.Trace -- TODO
-import           Language.C.Clang.Type          ( typeResultType )
+import qualified Data.Text                     as Text
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
+import           Language.C.Clang.Cursor        ( CursorKind
+                                                , cursorType
+                                                )
+
+import qualified Assumption                    as A
+import           Clang
+import           ClangType
+import           Core.Syntax
+import           Error
+import           MonadFresh
+import           Solve
+import           Type
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving stock (Eq, Show)
@@ -99,17 +86,6 @@ inferExpr env expr = case runInfer (inferType env expr) of
   Left err -> Left err
   Right (subst, preds, ty) ->
     Right $ closeOver (subst `apply` preds) (subst `apply` ty)
-
-checkPred :: ClassEnv -> Pred -> Bool
-checkPred classes pred = pred `S.member` classes
-
-isConcrete :: Type -> Bool
-isConcrete (TCon _ ) = True
-isConcrete (TAp x y) = isConcrete x && isConcrete y
-isConcrete (TVar _ ) = False
-
-isComplete :: Pred -> Bool
-isComplete (IsIn _ ts) = all isConcrete ts
 
 -- | Take the accumulated constraints and run a solver over them
 runSolve :: [Constraint] -> Infer (Subst, [Constraint])

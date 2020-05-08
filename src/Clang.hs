@@ -31,8 +31,8 @@ module Clang
   )
 where
 
-import           Control.Lens
 import           Control.Applicative
+import           Control.Lens
 import           Data.ByteString.Char8          ( ByteString )
 import qualified Data.ByteString.Char8         as BS
 import           Data.Foldable                  ( traverse_ )

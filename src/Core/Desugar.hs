@@ -10,25 +10,26 @@ module Core.Desugar
   )
 where
 
-import           Core.Syntax
-import           Core.Located
-import           Language.C.Clang.Cursor
-import           Control.Monad.Except           ( throwError
-                                                , MonadError
-                                                )
-import qualified Language.C.Clang.Cursor.Typed as T
-import           Data.Maybe                     ( fromJust )
-import           Clang
-import           ClangType
-import           Error
-import           Type                           ( nameFromBS
-                                                , Name(..)
+import           Control.Lens
+import           Control.Monad.Except           ( MonadError
+                                                , throwError
                                                 )
 import           Data.Foldable                  ( foldlM )
-import           Control.Lens
-import           Debug.Trace                    ( traceM )
 import qualified Data.Graph                    as G
 import qualified Data.List.NonEmpty            as NE
+import           Data.Maybe                     ( fromJust )
+import           Debug.Trace                    ( traceM )
+import           Language.C.Clang.Cursor
+import qualified Language.C.Clang.Cursor.Typed as T
+
+import           Clang
+import           ClangType
+import           Core.Located
+import           Core.Syntax
+import           Error
+import           Type                           ( Name(..)
+                                                , nameFromBS
+                                                )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation

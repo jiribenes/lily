@@ -10,16 +10,17 @@ module Core.Located
   )
 where
 
-import           Language.C.Clang.Location
-import           Core.Syntax
-import           Language.C.Clang.Cursor        ( cursorExtent )
-import           Data.Maybe                     ( fromJust )
-import           Control.Lens                   ( to
-                                                , (^.)
+import           Control.Lens                   ( (^.)
+                                                , to
                                                 )
-import qualified Data.Text.Prettyprint.Doc     as PP
-import           Language.C.Clang.File
 import qualified Data.ByteString.Char8         as BS
+import           Data.Maybe                     ( fromJust )
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Language.C.Clang.Cursor        ( cursorExtent )
+import           Language.C.Clang.File
+import           Language.C.Clang.Location
+
+import           Core.Syntax
 
 newtype Range = Range { unRange :: (Location, Location) }
     deriving stock (Show, Eq)

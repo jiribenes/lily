@@ -9,24 +9,25 @@
 module Core.Syntax where
 
 
-import           Type                           ( Name(..)
-                                                , Type
-                                                )
-import           ClangType
-import           Language.C.Clang.Cursor        ( cursorKind
-                                                , cursorSpelling
-                                                , Cursor
-                                                )
 import           Control.Lens
-import           Data.Functor                   ( ($>) )
-import           Clang
 import qualified Data.ByteString.Char8         as BS
+import           Data.Functor                   ( ($>) )
+import           Data.List.NonEmpty             ( NonEmpty((:|)) )
+import qualified Data.List.NonEmpty            as NE
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
-import           Data.List.NonEmpty             ( NonEmpty((:|)) )
-import qualified Data.List.NonEmpty            as NE
+import           Language.C.Clang.Cursor        ( Cursor
+                                                , cursorKind
+                                                , cursorSpelling
+                                                )
+
+import           Clang
+import           ClangType
+import           Type                           ( Name(..)
+                                                , Type
+                                                )
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 

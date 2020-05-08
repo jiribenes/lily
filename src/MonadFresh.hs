@@ -26,19 +26,17 @@ module MonadFresh
   )
 where
 
+import           Control.Applicative
+import           Control.Lens
 import           Control.Monad.Except
-import           Control.Monad.Identity
+import           Control.Monad.RWS
 import           Control.Monad.Reader
 import           Control.Monad.State
-import           Control.Monad.Writer
-import           Control.Monad.RWS
 import           Control.Monad.Trans.Maybe
-import           Control.Applicative
-
-import           Control.Lens
-import qualified Data.Text                     as T
-import qualified Data.List.NonEmpty            as NE
+import           Control.Monad.Writer
 import           Data.Kind                      ( Type )
+import qualified Data.List.NonEmpty            as NE
+import qualified Data.Text                     as T
 
 import           Type                           ( Name(..) )
 

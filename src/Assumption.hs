@@ -20,11 +20,11 @@ module Assumption
   )
 where
 
-import           Type
-
 import           Data.Coerce
 import qualified Data.Set                      as S
 import           Data.List                      ( foldl' )
+
+import           Type
 
 -- | Multimap of assumptions 
 newtype Assumption t = Assumption { unAssumption :: [(Name, t)] }

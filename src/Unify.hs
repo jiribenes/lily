@@ -4,16 +4,15 @@
 
 module Unify where
 
-import           Type
-
+import           Control.Monad.Except
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
-
-import           Control.Monad.Except
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
+
+import           Type
 
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
@@ -26,13 +25,9 @@ instance Pretty UnificationError where
   pretty (UnificationFail a b) = PP.align
     (PP.vsep -- TODO: kind is mostly for debug purposes (?)
       [ "Cannot unify:"
-      , PP.indent
-        4
-        (PP.hsep $ [pretty a, PP.parens $ "of kind:" <+> pretty (typeKind a)])
+      , PP.indent 4 $ PP.hsep [pretty a, PP.parens $ "of kind:" <+> pretty (typeKind a)]
       , "with:"
-      , PP.indent
-        4
-        (PP.hsep $ [pretty b, PP.parens $ "of kind:" <+> pretty (typeKind b)])
+      , PP.indent 4 $ PP.hsep [pretty b, PP.parens $ "of kind:" <+> pretty (typeKind b)]
       ]
     )
   pretty (KindMismatch a b) = PP.align

@@ -9,6 +9,17 @@ module Lily
   )
 where
 
+import           Control.Lens
+import           Data.Foldable                  ( foldlM )
+import qualified Data.Map                      as M
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(pretty)
+                                                )
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc.Render.Text
+                                                ( putDoc )
+import           Debug.Trace                    ( traceM )
+
 import           Clang
 import           Core.Desugar                   ( desugarTopLevel )
 import           Core.Syntax                    ( TopLevel'(TLLet)
@@ -19,17 +30,6 @@ import           Infer                          ( inferTop
                                                 , InferEnv
                                                 , typeEnv
                                                 )
-import           Data.Foldable                  ( foldlM )
-import           Debug.Trace                    ( traceM )
-import           Data.Text.Prettyprint.Doc.Render.Text
-                                                ( putDoc )
-import           Data.Text.Prettyprint.Doc      ( (<+>)
-                                                , Pretty(pretty)
-                                                )
-import           Control.Lens
-import qualified Data.Map                      as M
-import qualified Data.Text.Prettyprint.Doc     as PP
-
 lily :: FilePath -> IO ()
 lily filepath = do
   tu <- createTranslationUnit filepath []

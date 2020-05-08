@@ -7,29 +7,28 @@
 
 module Solve where
 
-import qualified Data.Map                      as M
-import qualified Data.Set                      as S
+import           Control.Lens
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           Control.Lens
 import           Data.List                      ( delete
                                                 , find
+                                                , nub
                                                 )
-import           Data.Maybe                     ( fromJust )
-import           Debug.Trace
 import           Data.List.NonEmpty             ( NonEmpty )
 import qualified Data.List.NonEmpty            as NE
+import qualified Data.Map                      as M
+import           Data.Maybe                     ( fromJust )
+import qualified Data.Set                      as S
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
 
 import           Type
 import           MonadFresh
 import           Unify
 import           Core.Located
 import           Core.Syntax                    ( Expr )
-import qualified Data.Text.Prettyprint.Doc     as PP
-import           Data.Text.Prettyprint.Doc      ( (<+>)
-                                                , Pretty(..)
-                                                )
-import           Data.List                      ( nub )
 
 data Reason = BecauseExpr Expr
             | PairedAssumption Name Type
@@ -56,7 +55,7 @@ instance Pretty Reason where
   pretty BecauseUn = "from a [Un] rule"
   pretty BecauseLeq = "from a [Leq] rule"
   pretty (FromClang typ expr) = PP.align $ PP.sep
-    [ "got type:" <+> pretty typ
+    [ "from Clang got type:" <+> pretty typ
     , "from expression at" <+> prettyLocation (loc expr)
     ]
 
@@ -243,16 +242,13 @@ instantiate (Forall xs qt) = do
 
 -- TODO: This function is a bit incorrect, see below
 generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
-generalize unsolved free t =
-  {-traceShow (("tyVars", pretty $ S.toList tyVars), ("preds", pretty preds))
-    $-}
-                             Forall (S.toList tyVars) (preds :=> t)
+generalize unsolved free t = Forall (S.toList tyVars) (preds :=> t)
  where
   tyVars = ftv t `S.difference` free
   preds  = toPreds $ nub unsolved
-  --preds  = filter (\(IsIn _ xs) -> any (`isIn` tyVars) xs) (toPreds unsolved) -- This for example discharges any (Un $ConcreteType) even when it's really not true! That's a real problem! TODO TODO TODO
-  isIn (TVar x) xs = x `S.member` xs
-  isIn _        _  = False
+  -- preds  = filter (\(IsIn _ xs) -> any (`isIn` tyVars) xs) (toPreds unsolved) -- This for example discharges any (Un $ConcreteType) even when it's really not true! That's a real problem! TODO TODO TODO
+  -- isIn (TVar x) xs = x `S.member` xs
+  -- isIn _        _  = False
 
 freshType :: MonadFresh Name m => Kind -> m Type
 freshType kind = do

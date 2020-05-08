@@ -4,15 +4,16 @@ module ClangType
   )
 where
 
-import           Type
-import           Language.C.Clang.Type          ( typePointeeType
-                                                , typeCanonicalType
-                                                , typeSpelling
-                                                )
-import qualified Language.C.Clang.Type         as Clang
 import qualified Data.ByteString.Char8         as BS
 import           Data.Functor                   ( (<&>) )
 import           Debug.Trace                    ( traceShow )
+import           Language.C.Clang.Type          ( typeCanonicalType
+                                                , typePointeeType
+                                                , typeSpelling
+                                                )
+import qualified Language.C.Clang.Type         as Clang
+
+import           Type
 
 type ClangType = Clang.Type
 
