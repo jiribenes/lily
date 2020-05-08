@@ -24,7 +24,6 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import           Data.Maybe                     ( isJust )
-import           Control.Applicative            ( (<|>) )
 
 newtype Name = Name { unName :: Text }
   deriving newtype (Eq, Ord, IsString, Pretty)
@@ -70,6 +69,9 @@ prettyType ps = \case
  where
   prettyLeft ps a = maybeParenArrow isFunction a (prettyType ps a)
   isFunction f = PFun f `S.member` ps
+
+  maybeParenArrow :: (Type -> Bool) -> Type -> PP.Doc ann -> PP.Doc ann
+  maybeParenArrow p f doc = if isArrow p f then PP.parens doc else doc
 
 -- | Kind is the type of type
 -- needed for type constructors
@@ -136,7 +138,7 @@ pattern PNum :: Type -> Pred
 pattern PNum x <- IsIn "Num" [x] where PNum x = IsIn "Num" [x]
 
 pattern LinArrow :: Type -> Type -> Type
-pattern LinArrow a b <- (extractSpecificArrow (== conLinArrow) -> Just (a, b))
+pattern LinArrow a b <- (extractSpecificArrow (== conLinArrow) -> Just (a, b)) 
   where LinArrow a b = TCon conLinArrow `TAp` a `TAp` b
 
 pattern UnArrow :: Type -> Type -> Type
@@ -170,11 +172,8 @@ extractSpecificArrow p (TCon c `TAp` a `TAp` b) =
 extractSpecificArrow _ _ = Nothing
 
 isArrow :: (Type -> Bool) -> Type -> Bool
-isArrow p (f@(TVar (TV n _)) `TAp` a `TAp` b) = p f
+isArrow p (f@TVar{} `TAp` _ `TAp` _) = p f
 isArrow _ t = isJust $ extractSpecificArrow isSpecificArrow $ t
-
-maybeParenArrow :: (Type -> Bool) -> Type -> PP.Doc ann -> PP.Doc ann
-maybeParenArrow p f doc = if isArrow p f then PP.parens doc else doc
 
 -- | Qualified `a` is an `a` with a list of predicates
 data Qual a = [Pred] :=> a deriving stock (Eq, Show, Ord)
@@ -223,7 +222,7 @@ instance Substitutable TVar where
   apply (Subst s) a = tv
    where
     t         = TVar a
-    (TVar tv) = M.findWithDefault t a s
+    (TVar tv) = M.findWithDefault t a s -- this is fine by construction!
 
 instance Substitutable Type where
   apply _         con@TCon{}       = con

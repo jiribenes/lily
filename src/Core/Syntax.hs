@@ -25,6 +25,8 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
+import           Data.List.NonEmpty             ( NonEmpty((:|)) )
+import qualified Data.List.NonEmpty            as NE
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
@@ -35,7 +37,6 @@ data Expr' t c = Var c Name
                | LetIn c Name (Expr' t c) (Expr' t c)
                | Literal c
                | If c (Expr' t c) (Expr' t c) (Expr' t c)
-               | Fix c (Expr' t c)
                | Builtin c BuiltinExpr
           deriving stock (Eq, Ord, Show, Functor)
 
@@ -73,7 +74,7 @@ instance Pretty (Let t Cursor) where
     "let" <+> pretty name <+> "=" <+> PP.hang 4 (pretty expr)
 
 data TopLevel' t c = TLLet (Let t c)
-                   | TLLetRecursive [Let t c]
+                   | TLLetRecursive (NonEmpty (Let t c))
                    | TLLetNoBody c Name
   deriving stock (Eq, Ord, Show, Functor)
 makePrisms ''TopLevel'
@@ -81,8 +82,9 @@ makePrisms ''TopLevel'
 type TopLevel = TopLevel' (Maybe ClangType) Cursor
 
 instance Pretty (TopLevel' t Cursor) where
-  pretty (TLLet          l ) = pretty l
-  pretty (TLLetRecursive ls) = "rec" <+> PP.align (PP.vsep $ pretty <$> ls)
+  pretty (TLLet l) = pretty l
+  pretty (TLLetRecursive ls) =
+    "rec" <+> PP.align (PP.vsep $ NE.toList $ pretty <$> ls)
   pretty (TLLetNoBody _ name) =
     PP.enclose "(*" "*)" $ "predeclared:" <+> "let" <+> pretty name
 
@@ -116,7 +118,7 @@ instance HasCursor (CursorExpr t) where
       LetIn c _ _ _ -> c
       Literal c     -> c
       If c _ _ _    -> c
-      Fix c _       -> c
+      Builtin c _   -> c
     setter :: CursorExpr t -> Cursor -> CursorExpr t
     setter c newCursor = c $> newCursor
 
@@ -137,9 +139,9 @@ instance HasCursor TopLevel where
    where
     getter :: TopLevel -> Cursor
     getter = \case
-      TLLet          l       -> view cursorL l
-      TLLetRecursive (l : _) -> view cursorL l
-      TLLetNoBody c _        -> c
+      TLLet          l        -> view cursorL l
+      TLLetRecursive (l :| _) -> view cursorL l
+      TLLetNoBody c _         -> c
     setter :: TopLevel -> Cursor -> TopLevel
     setter c newCursor = c $> newCursor
 

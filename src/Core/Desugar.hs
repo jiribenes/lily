@@ -28,6 +28,7 @@ import           Data.Foldable                  ( foldlM )
 import           Control.Lens
 import           Debug.Trace                    ( traceM )
 import qualified Data.Graph                    as G
+import qualified Data.List.NonEmpty            as NE
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -239,7 +240,9 @@ desugarSCCTopLevel (G.AcyclicSCC cursor ) = desugarTopLevelFunction cursor
 desugarSCCTopLevel (G.CyclicSCC  cursors) = do
   topLevelFunctions <- traverse desugarTopLevelFunction cursors
   let properFunctions = topLevelFunctions ^.. each . folding (preview _TLLet)
-  properFunctions & TLLetRecursive & pure
+  case properFunctions of
+    [] -> throwError DesugarWeirdness
+    xs -> xs & NE.fromList & TLLetRecursive & pure
 
 desugarTopLevel :: [G.SCC SomeFunctionCursor] -> Either DesugarError [TopLevel]
 desugarTopLevel = traverse desugarSCCTopLevel
