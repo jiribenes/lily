@@ -43,25 +43,40 @@ data Expr' t c = Var c Name
 --          | Ctor Name Expr
 --          | Elim Name [Name] Expr Expr
 
-data BuiltinExpr = BuiltinBinOp BinOp
-                 | BuiltinUnOp UnOp
+data BuiltinExpr = BuiltinBinOp BinOp Type Type
+                 | BuiltinUnOp UnOp Type Type
                  | BuiltinMemberRef
                  | BuiltinNew Type
-                 | BuiltinArraySubscript
+                 | BuiltinArraySubscript Type Type
                  | BuiltinUnit
                  | BuiltinNullPtr
   deriving stock (Eq, Show, Ord)
 
 instance Pretty BuiltinExpr where
-  pretty (BuiltinBinOp bop) =
-    "#builtin_binop_" <> pretty (drop (length ("BinOp" :: String)) (show bop))
-  pretty (BuiltinUnOp uop) =
-    "#builtin_unop_" <> pretty (drop (length ("UnOp" :: String)) (show uop))
-  pretty BuiltinMemberRef      = "#builtin_memberref"
+  pretty (BuiltinBinOp bop resultType opType) =
+    "#builtin_binop_"
+      <>  pretty (drop (length ("BinOp" :: String)) (show bop))
+      <+> "@"
+      <>  PP.parens (pretty resultType)
+      <+> "@"
+      <>  PP.parens (pretty opType)
+  pretty (BuiltinUnOp uop resultType opType) =
+    "#builtin_unop_"
+      <>  pretty (drop (length ("UnOp" :: String)) (show uop))
+      <+> "@"
+      <>  PP.parens (pretty resultType)
+      <+> "@"
+      <>  PP.parens (pretty opType)
+  pretty BuiltinMemberRef = "#builtin_memberref"
   pretty (BuiltinNew typ) = "#builtin_new" <+> "@" <> PP.parens (pretty typ)
-  pretty BuiltinArraySubscript = "#builtin_arrsubscript"
-  pretty BuiltinUnit           = "#builtin_unit"
-  pretty BuiltinNullPtr        = "#builtin_nullptr"
+  pretty (BuiltinArraySubscript arrayTyp subscriptTyp) =
+    "#builtin_arrsubscript"
+      <+> "@"
+      <>  PP.parens (pretty arrayTyp)
+      <+> "@"
+      <>  PP.parens (pretty subscriptTyp)
+  pretty BuiltinUnit    = "#builtin_unit"
+  pretty BuiltinNullPtr = "#builtin_nullptr"
 
 type Expr = Expr' (Maybe ClangType) Cursor
 type CursorExpr t = Expr' t Cursor
@@ -147,3 +162,13 @@ instance HasCursor TopLevel where
 
 unit :: Cursor -> Expr
 unit c = Builtin c BuiltinUnit
+
+class HasName a where
+  nameL :: Lens' a Name
+
+instance HasName (Let t c) where
+  nameL = lens getter setter
+   where
+    getter :: Let t c -> Name
+    getter (Let _ n _) = n
+    setter (Let c _ e) n = Let c n e

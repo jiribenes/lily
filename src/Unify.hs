@@ -14,22 +14,31 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
+
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
-                      | KindMismatch TVar Type
+                      | KindMismatch Type Type
                       | ConstructorNotFound Name
                       | Unsatisfied [Pred]
                       deriving stock (Eq, Ord)
 
 instance Pretty UnificationError where
   pretty (UnificationFail a b) = PP.align
-    (PP.vsep
-      ["Cannot unify:", PP.indent 4 (pretty a), "with:", PP.indent 4 (pretty b)]
+    (PP.vsep -- TODO: kind is mostly for debug purposes (?)
+      [ "Cannot unify:"
+      , PP.indent
+        4
+        (PP.hsep $ [pretty a, PP.parens $ "of kind:" <+> pretty (typeKind a)])
+      , "with:"
+      , PP.indent
+        4
+        (PP.hsep $ [pretty b, PP.parens $ "of kind:" <+> pretty (typeKind b)])
+      ]
     )
-  pretty (KindMismatch (TV a k) b) = PP.align
+  pretty (KindMismatch a b) = PP.align
     (PP.vsep
       [ "Kind mismatch between:" <+> pretty a <+> "and" <+> pretty b
-      , "because: " <+> pretty k <+> "/=" <+> pretty (typeKind b)
+      , "because: " <+> pretty (typeKind a) <+> "/=" <+> pretty (typeKind b)
       ]
     )
   pretty (InfiniteType (TV a _) b) =
@@ -40,7 +49,8 @@ instance Pretty UnificationError where
       <+> PP.indent 4 (PP.vsep $ pretty <$> preds)
 
 unifies :: MonadError UnificationError m => Type -> Type -> m Subst
-unifies t1 t2 | t1 == t2               = pure emptySubst
+unifies t1 t2 | t1 == t2                   = pure emptySubst
+              | typeKind t1 /= typeKind t2 = throwError $ KindMismatch t1 t2
 unifies (TCon c1) (TCon c2) | c1 == c2 = pure emptySubst
 unifies (TVar tv)   t                  = tv `bind` t
 unifies t           (TVar tv  )        = tv `bind` t
@@ -52,7 +62,7 @@ occursCheck tv t = tv `S.member` ftv t
 
 bind :: MonadError UnificationError m => TVar -> Type -> m Subst
 bind tv@(TV _ k) t | t == TVar tv     = pure emptySubst
-                   | typeKind t /= k  = throwError $ KindMismatch tv t
+                   | typeKind t /= k  = throwError $ KindMismatch (TVar tv) t
                    | occursCheck tv t = throwError $ InfiniteType tv t
                    | otherwise        = pure $ Subst $ M.singleton tv t
 

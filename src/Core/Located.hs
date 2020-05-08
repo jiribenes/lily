@@ -1,9 +1,11 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Core.Located
   ( Location(..)
+  , prettyLocation
   , Located(..)
   )
 where
@@ -15,9 +17,17 @@ import           Data.Maybe                     ( fromJust )
 import           Control.Lens                   ( to
                                                 , (^.)
                                                 )
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Language.C.Clang.File
+import qualified Data.ByteString.Char8         as BS
 
 newtype Range = Range { unRange :: (Location, Location) }
     deriving stock (Show, Eq)
+
+prettyLocation :: Location -> PP.Doc ann
+prettyLocation (Location f l c _) = PP.concatWith
+  (PP.surround ":")
+  [PP.pretty $ BS.unpack $ fileName f, PP.pretty l, PP.pretty c]  
 
 class Located a where
     loc :: a -> Location

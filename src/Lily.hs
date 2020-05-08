@@ -11,12 +11,14 @@ where
 
 import           Clang
 import           Core.Desugar                   ( desugarTopLevel )
+import           Core.Syntax                    ( TopLevel'(TLLet)
+                                                , nameL
+                                                , TopLevel
+                                                )
 import           Infer                          ( inferTop
                                                 , InferEnv
                                                 , typeEnv
                                                 )
-import           Type                           ( nameFromBS )
-import           Data.Graph                     ( SCC(..) )
 import           Data.Foldable                  ( foldlM )
 import           Debug.Trace                    ( traceM )
 import           Data.Text.Prettyprint.Doc.Render.Text
@@ -38,28 +40,39 @@ lily filepath = do
   print scc
 
   putStrLn "----------------------"
-  case desugarTopLevel scc of
-    Right xs  -> putDoc $ PP.align $ PP.vcat $ pretty <$> xs
-    Left  err -> putStrLn $ "Desugaring failed! Error: " <> show err
+  scc' <- case desugarTopLevel scc of
+    Left err -> do
+      putStrLn "Desugaring failed!"
+      putStrLn $ "Error: " <> show err
+      pure []
+    Right xs -> do
+      putDoc $ PP.align $ PP.vcat $ pretty <$> xs
+      putStrLn ""
+      pure xs
 
   putStrLn "----------------------"
   let initialEnv = mempty
-  finalEnv <- foldlM go initialEnv scc
+  finalEnv <- foldlM go initialEnv scc'
 
   let finalInferEnv = finalEnv ^. typeEnv . to M.toList
 
   putDoc $ "let" <+> PP.align (PP.vcat $ prettify <$> finalInferEnv)
+  pure ()
  where
   prettify (name, typ) = PP.fill 5 (pretty name) <+> "::" <+> pretty typ
 
-  go :: InferEnv -> SCC SomeFunctionCursor -> IO InferEnv
-  go env (AcyclicSCC func) =
-    case inferTop env [(func & someSpelling & nameFromBS, func)] of
+  go :: InferEnv -> TopLevel -> IO InferEnv
+  go env l@(TLLet nonRecursiveLet) =
+    case inferTop env [(nonRecursiveLet ^. nameL, l)] of
       Left err -> do
-        putStrLn $ "Error happened! " <> show (pretty err)
+        putStrLn "======================"
+        putStrLn "Error happened!"
+        putStrLn "----------------------"
+        putDoc $ pretty err
+        putStrLn ""
+        putStrLn "======================"
         pure env
       Right newEnv -> pure newEnv
-  go env (CyclicSCC funcs) = do
-    traceM $ "TODO Ignoring a cyclic dependency for now!" <> unwords
-      (show <$> funcs)
+  go env _ = do
+    traceM $ "TODO Ignoring a cyclic dependency for now!"
     pure env -- ignore

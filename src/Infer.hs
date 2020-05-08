@@ -17,6 +17,7 @@ import           Solve
 import           Clang
 import           ClangType
 import           Error
+import           Core.Syntax
 
 import           Control.Monad.Except
 import           Control.Monad.Reader
@@ -93,7 +94,7 @@ runInfer m =
   runExcept $ evalFreshT (runReaderT (unInfer m) S.empty) initialFreshState
 
 -- | Infer a single type for an expression
-inferExpr :: InferEnv -> SomeFunctionCursor -> Either InferError Scheme
+inferExpr :: InferEnv -> TopLevel -> Either InferError Scheme
 inferExpr env expr = case runInfer (inferType env expr) of
   Left err -> Left err
   Right (subst, preds, ty) ->
@@ -120,49 +121,55 @@ runSolve cs = do
       setFresh newFresh
       pure result
 
-inferType :: InferEnv -> SomeFunctionCursor -> Infer (Subst, [Pred], Type)
-inferType env expr = do
-  (as, t, cs) <- infer (unwrapSomeFunction expr)
+inferType :: InferEnv -> TopLevel -> Infer (Subst, [Pred], Type)
+inferType env = \case
+  TLLet (Let _ cursor expr) -> do
+    (as, t, cs) <- infer expr
 
-  let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
+    let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
 
-  -- if we still have some free unknown variables which are 
-  -- in `as` but not in `env` by this point, we need to report them as an error
-  unless (S.null unbounds) $ throwError $ UnboundVariables (S.toList unbounds)
+    -- if we still have some free unknown variables which are 
+    -- in `as` but not in `env` by this point, we need to report them as an error
+    unless (S.null unbounds) $ throwError $ UnboundVariables (S.toList unbounds)
 
-  -- pair known assumptions to environment types
-  let cs' =
-        [ CExpInst t s
-        | (x, s) <- env ^. typeEnv . to M.toList
-        , t      <- x `A.lookup` as
-        ]
+    -- pair known assumptions to environment types
+    let cs' =
+          [ CExpInst (PairedAssumption x t) t s
+          | (x, s) <- env ^. typeEnv . to M.toList
+          , t      <- x `A.lookup` as
+          ]
 
-  -- solve all constraints together and get the resulting substitution
-  (subst, unsolved) <- runSolve (cs <> cs')
+    -- solve all constraints together and get the resulting substitution
+    (subst, unsolved) <- runSolve (cs <> cs')
 
-  {-
-  traceShowM
-    ( "unsolved:"
-    , pretty unsolved
-    , "subst:"
-    , pretty subst
-    , "type:"
-    , pretty t
-    , "subst-type"
-    , pretty $ subst `apply` t
-    , "preds:"
-    , pretty $ unsolved
-    , "subst-preds:"
-    , pretty $ subst `apply` unsolved
-    )
-    -}
+    {-
+    traceShowM
+      ( "unsolved:"
+      , pretty unsolved
+      , "subst:"
+      , pretty subst
+      , "type:"
+      , pretty t
+      , "subst-type"
+      , pretty $ subst `apply` t
+      , "preds:"
+      , pretty $ unsolved
+      , "subst-preds:"
+      , pretty $ subst `apply` unsolved
+      )
+      -}
 
-    -- Ideally, do a difference between these lists, but that's too hard for now
-  unless (length unsolved == length (toPreds unsolved))
-    $ throwError
-    $ WrongConstraint unsolved
+      -- Ideally, do a difference between these lists, but that's too hard for now
+    unless (length unsolved == length (toPreds unsolved))
+      $ throwError
+      $ WrongConstraint unsolved
 
-  pure (subst, subst `apply` toPreds unsolved, subst `apply` t)
+    pure (subst, subst `apply` toPreds unsolved, subst `apply` t)
+
+  TLLetRecursive xs -> do
+    error "TODO: not implemented yet"
+  TLLetNoBody _ _ -> do
+    error "This should never happen!"
 
 closeOver :: [Pred] -> Type -> Scheme
 closeOver preds = normalize . generalize (fromPred <$> preds) S.empty
@@ -185,16 +192,16 @@ makeArrow x f y = f `TAp` x `TAp` y
 
 -- | Adds a 'Leq t u' constraint for every type 'u' in the assumptions
 leq :: Type -> A.Assumption Type -> [Constraint]
-leq t = fmap (`CGeq` t) . A.values
+leq t = fmap (\x -> CGeq BecauseLeq x t) . A.values
 
 -- | Adds a 'Un' constraint if the name is in assumptions
 wkn :: Name -> Type -> A.Assumption Type -> [Constraint]
-wkn x t as | x `A.notMember` as = [CUn t]
+wkn x t as | x `A.notMember` as = [CUn BecauseWkn t]
            | otherwise          = []
 
 -- | Adds a 'Un' constraint for every type in the assumptions
 unrestricted :: A.Assumption Type -> [Constraint]
-unrestricted = fmap CUn . A.values
+unrestricted = fmap (CUn BecauseUn) . A.values
 
 freshFun :: Infer (Type, [Constraint])
 freshFun = do
@@ -202,197 +209,197 @@ freshFun = do
   pure (f, [fromPred $ PFun f])
 
 -- | Take an expression and produce assumptions, result type and constraints to be solved
--- TODO: could this be nicer and more specific by using _singletons_ directly?
-infer :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
-infer cursor = case cursorKind cursor of
-  IntegerLiteral     -> pure (A.empty, typeInt, [])
-  CXXBoolLiteralExpr -> pure (A.empty, typeBool, [])
-  CharacterLiteral   -> pure (A.empty, typeChar, [])
+infer :: Expr -> Infer (A.Assumption Type, Type, [Constraint])
+infer expr = case expr of
+  Literal cursor -> do
+    typ <- note Weirdness $ fromClangType =<< cursorType cursor
+    pure (A.empty, typ, [])
 
-  BinaryOperator     -> do
-    let [left, right] = cursorChildren cursor
-
-    traceM $ show $ parseBinOp
-      (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
-
-    -- fromJust is justified here as `HasType 'BinaryOperator`
-    let clangType       = fromJust $ cursorType cursor
-    let operatorArgType = fromJust $ fromClangType clangType
-    (as1, t1, cs1) <- infer left
-    (as2, t2, cs2) <- infer right
-    pure (as1 <> as2, t1, CEq t1 t2 : CEq t1 operatorArgType : (cs1 <> cs2))
-
-  UnaryOperator -> do
-    let [child] = cursorChildren cursor
-
-    -- TODO: Handle the error more gracefully!
-    unOp <- note Weirdness
-      $ parseUnOp (fromJust $ T.matchKind @ 'UnaryOperator $ cursor)
-
-    (as, t, cs) <- infer child
-
-    case unOp of
-      UnOpDeref -> do
-        tv <- freshType StarKind
-        pure (as, tv, CEq t (typePtrOf tv) : cs <> unrestricted as)
-      UnOpAddrOf -> do
-        tv <- freshType StarKind
-        pure (as, tv, CEq tv (typePtrOf t) : cs <> unrestricted as)
-      other -> do
-        traceM $ "Best effort for unary operation: " <> show other <> "!"
-
-        -- fromJust is justified here as `HasType 'UnaryOperator`
-        let clangType = fromJust $ cursorType cursor >>= fromClangType
-        pure (as, t, CEq t clangType : cs <> unrestricted as)
-
-  -- parameter declaration
-  ParmDecl    -> throwError UnexpectedParameterDeclarationOutsideFunction
-
-  -- TODO: Variable declaration
-  -- should become 
-  --
-  -- _let_ x = <RHS> _in_ <rest of the program>
-  --
-  -- How can we do this efficiently?
-  -- Because we need to thread the values together!
-
-  -- variable/function reference
-  DeclRefExpr -> do
+  -- A variable x has type t as an assumption  
+  Var cursor x -> do
     tv <- freshType StarKind
+    pure (A.singleton (x, tv), tv, [])
 
-    let name = nameFromBS $ cursorSpelling cursor
+  -- An abstraction \x -> e:
+  --  - We'll presume that x has a monomorphic type tv
+  --  - Provided e produces assumptions as, type t and constraints cs
+  --  - We produce:
+  --        - Assumptions as - x
+  --        - Type tv -f> t, where f is a new type variable of arrow kind
+  --        - Constraints:
+  --           - t' ~ tv where t' is type of x in as
+  --           - cs
+  --           - Fun f
+  --           - leq f (as - x)
+  --           - wkn x tv as
+  Lam cursor _ x e -> do
+    (tv, a)     <- freshTypeAndTVar StarKind
+    (as, t, cs) <- a `extendMonos` infer e
+
+    (f, fPreds) <- freshFun -- this is the arrow kind
+    let as'   = as `A.remove` x
+    -- TODO: this is a bit of a hack, it should be just 'as' but that produces wrong results. this should really be checked!
+
+    let preds = nub $ leq f as' <> wkn x tv as
+
     pure
-      ( A.singleton (name, tv)
-      , tv  -- Note: We are actually never using the resulting type of this directly -- only indirectly through assumptions!
-      , []
+      ( as `A.remove` x
+      , makeArrow tv f t
+      , cs
+      <> [ CEq (BecauseExpr e) t' tv | t' <- A.lookup x as ]
+      <> fPreds
+      <> preds
       )
 
-  FunctionDecl     -> inferSomeFunction cursor
-  FunctionTemplate -> inferSomeFunction cursor
+  App cursor e1 e2 -> do
+    (as1, t1, cs1) <- infer e1
+    (as2, t2, cs2) <- infer e2
+    tv             <- freshType StarKind
 
-  FirstExpr        -> inferSingleChild cursor
-  CompoundStmt     -> inferLastChild cursor
-  ReturnStmt       -> inferSingleChild cursor
-
-  CallExpr         -> do
-    -- here we're relying on the fact that the first child in AST tree will be a function reference
-    -- and the rest are arguments
-    let (functionRef : args) = cursorChildren cursor
-
-    (fAs   , fT   , fCs   ) <- infer functionRef
-    (asList, tList, csList) <- unzip3 <$> traverse infer args
-
-    (fs, fsPreds)           <- unzip <$> traverse (const freshFun) args
-    tv                      <- freshType StarKind
-
-
-    let as    = fAs : asList
-    let preds = nub $ unrestricted $ A.intersectMany as
-
-    let functionType =
-          foldr (\(t, f) acc -> makeArrow t f acc) tv $ zip tList fs
+    (f, fPreds)    <- freshFun -- fresh arrow kind
+    let preds = nub $ unrestricted $ as1 `A.intersection` as2
 
     pure
-      ( fold as
+      ( as1 <> as2
       , tv
-      , fCs <> fold csList <> preds <> fold fsPreds <> [CEq fT functionType]
+      , cs1
+      <> cs2
+      <> [CEq (BecauseExpr expr) t1 (makeArrow t2 f tv)]
+      <> fPreds
+      <> preds
       )
 
-  other -> do
-    traceM
-      $  "Found: '"
-      <> show other
-      <> "'. Will attempt to solve the situation as best as I can!"
-    let children = cursorChildren cursor
+  LetIn cursor x e1 e2 -> do
+    (as1, t1, cs1) <- infer e1
+    (as2, t2, cs2) <- infer e2
+    monos          <- ask
+    tv             <- freshType StarKind
+    let preds = nub $ unrestricted (as1 `A.intersection` as2) <> wkn x tv as2 -- Q in paper
+    pure
+      ( (as1 <> as2) `A.remove` x
+      , t2
+      , cs1
+      <> cs2
+      <> [ CImpInst (BecauseExpr expr) t' monos t1 | t' <- A.lookup x as2 ]
+      <> [ CEq (BecauseExpr expr) tv t' | t' <- A.lookup x as2 ] -- This is for the wkn condition, as we need a new type variable
+      <> preds
+      )
 
-    traceM $ "This node has: " <> show (length children) <> " children!"
+  If cursor e1 e2 e3 -> do
+    (as1, t1, cs1) <- infer e1
+    (as2, t2, cs2) <- infer e2
+    (as3, t3, cs3) <- infer e3
+    pure
+      ( as1 <> as2 <> as3
+      , t2
+      , cs1
+      <> cs2
+      <> cs3
+      <> [CEq (BecauseExpr expr) t1 typeBool, CEq (BecauseExpr expr) t2 t3]
+      )
 
-    -- if the cursor doesn't have any children, we're out of luck and give up
-    when (null children) $ throwError $ UnknownASTNodeKind other
+  Builtin cursor b -> case b of
+    BuiltinBinOp bo resultTyp opTyp -> case bo of
+      -- TODO: scrap the boilerplate, use resultTyp and opTyp directly!
+      BinOpEQ -> do
+        tv1      <- freshType StarKind
+        tv2      <- freshType StarKind
+        resultTv <- freshType StarKind
 
-    if (length children == 1)
-      then inferSingleChild cursor
-      else inferLastChild cursor
-      -- otherwise just gather the constraints and hope for the best.. :shrug:
-      -- TODO: this should be hidden under some '--best-effort' kind of flag
+        let f = makeFn3 tv1 tv2 resultTv
 
+        pure
+          ( A.empty
+          , f
+          , [ CEq (BecauseExpr expr) resultTv typeBool
+            , CEq (BecauseExpr expr) tv1      tv2
+            ]
+          )
 
-inferSomeFunction :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
-inferSomeFunction cursor = do
-      -- these are typically the first children but I really want to be safe here 
-  let parameterF :: Fold Cursor (T.CursorK 'ParmDecl)
-      parameterF = cursorChildrenF . folding (T.matchKind @ 'ParmDecl)
+      BinOpAdd -> do -- TODO: B O I L E R P L A T E
+        tv1      <- freshType StarKind
+        tv2      <- freshType StarKind
+        resultTv <- freshType StarKind
 
-    -- this is typically the last child but again, trying to be safe here!
-  let bodyF :: Fold Cursor (T.CursorK 'CompoundStmt)
-      bodyF = cursorChildrenF . folding (T.matchKind @ 'CompoundStmt)
+        let f = makeFn3 tv1 tv2 resultTv
 
-  let parameters = cursor ^.. parameterF . to T.withoutKind
-  let [body]     = cursor ^.. bodyF . to T.withoutKind
+        pure
+          ( A.empty
+          , f
+          , [ CEq (BecauseExpr expr) resultTv tv1
+            , CEq (BecauseExpr expr) tv1      tv2
+            ]
+          )
 
-  -- TODO: extract this into its own function!
-  (paramTypes, paramTVars) <-
-    unzip <$> traverse (const $ freshTypeAndTVar StarKind) parameters
-  let paramNames =
-        cursor ^.. parameterF . to (nameFromBS . cursorSpelling . T.withoutKind)
-  -- TODO: Why don't ParamDecls have spelling? Investigate/fix!
+      BinOpMul -> do
+        tv1      <- freshType StarKind
+        tv2      <- freshType StarKind
+        resultTv <- freshType StarKind
 
-  -- TODO: If we're a generic/template function, then some ParamDecls have a child "TypeRef"
-  -- we could use to constrain the type even further!
-  (as, returnType, cs) <- extendManyMonos paramTVars $ infer body
+        let f = makeFn3 tv1 tv2 resultTv
 
-  (fs, fsPreds)        <- unzip <$> traverse (const freshFun) parameters -- arrow kind!
-  let as'                   = as `A.removeMany` paramNames
-  let wkns = (\(x, tv) -> wkn x tv as) =<< (zip paramNames paramTypes)
-  let preds :: [Constraint] = nub ((fs >>= \f -> leq f as') <> wkns)
+        pure
+          ( A.empty
+          , f
+          , [ CEq (BecauseExpr expr) resultTv tv1
+            , CEq (BecauseExpr expr) tv1      tv2
+            ]
+          )
 
-  let something             = zip paramTypes fs
-  let functionType =
-        foldr (\(tv, f) acc -> makeArrow tv f acc) returnType something
+      _ -> error "not implemented yet"
+    BuiltinUnOp uo resultTyp opTyp -> case uo of
+      -- TODO: scrap the boilerplate _for most!_, use resultTyp and opTyp directly!
+      UnOpAddrOf -> do
+        tv  <- freshType StarKind
+        tv' <- freshType StarKind
+        let resultType = typePtrOf tv'
+        let f          = makeFn2 tv resultType
 
-  -- TODO: our real return type isn't actually the inferred type of the body
-  -- but rather a type variable that should unify with _all_ of the 'ReturnStmt'.
-  -- This might be an important distinction but also it could be irrelevant seeing as Clang must verify the file first.
-  let returnEqConstraint =
-        maybe [] (\x -> [CEq x returnType])
-          $   cursorType cursor
-          >>= typeResultType
-          >>= fromClangType
+        pure (A.empty, f, [CEq (BecauseExpr expr) tv tv'])
+      UnOpDeref -> do
+        tv         <- freshType StarKind
+        resultType <- freshType StarKind
+        let f = makeFn2 (typePtrOf tv) resultType
 
-  pure
-    ( as'
-    , functionType
-    , returnEqConstraint
-    <> cs
-    <> (eqConstraints paramNames paramTypes as)
-    <> fold fsPreds
-    <> preds
-    )
+        pure (A.empty, f, [CEq (BecauseExpr expr) tv resultType])
+      other -> error $ "not implemented yet: " <> show other
+    BuiltinMemberRef -> error "not implemented yet"
+    BuiltinArraySubscript clangArrayTyp clangSubscriptTyp -> do
+      array     <- freshType (ArrowKind StarKind StarKind)
+      arrayElem <- freshType StarKind
+      subscript <- freshType StarKind
+      result    <- freshType StarKind
 
--- | Call this for expressions that have a single child
--- and therefore are only some semantic wrappers!
-inferSingleChild :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
-inferSingleChild cursor = do
-  let [child] = cursorChildren cursor
-  (as, t, cs) <- infer child
-  pure (as, t, cs)
+      let arrType = array `TAp` arrayElem
 
-inferLastChild :: Cursor -> Infer (A.Assumption Type, Type, [Constraint])
-inferLastChild cursor = do
-  (asList, tList, csList) <- unzip3 <$> traverse infer (cursorChildren cursor)
-  pure (fold asList, last tList, fold csList)
+      let f       = makeFn3 arrType subscript result
 
--- Helper for infer @'FunctionDecl
--- TODO: Refactor!
-eqConstraints :: [Name] -> [Type] -> A.Assumption Type -> [Constraint]
-eqConstraints paramNames paramTypes as = do
-  (x, tv) <- zip paramNames paramTypes
-  t'      <- A.lookup x as
-  pure $ CEq t' tv
+      pure
+        ( A.empty
+        , f
+        , [ CEq (FromClang clangArrayTyp expr)     clangArrayTyp     arrType
+          , CEq (BecauseExpr expr)                 result            arrayElem
+          , CEq (FromClang clangSubscriptTyp expr) clangSubscriptTyp subscript
+          ]
+        )
+    BuiltinUnit    -> pure (A.empty, typeUnit, [])
+    BuiltinNullPtr -> do
+      tv    <- freshType StarKind
+
+      someA <- freshType StarKind
+      let somePointer = typePtrOf someA
+
+      pure (A.empty, tv, [CEq (BecauseExpr expr) tv somePointer])
+    BuiltinNew typ -> do
+      tv         <- freshType StarKind
+      resultType <- freshType StarKind
+
+      let f = makeFn2 tv resultType
+
+      pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
 
 -- | This is the top-level function that should be used for inferring a type of something
-inferTop
-  :: InferEnv -> [(Name, SomeFunctionCursor)] -> Either InferError InferEnv
+inferTop :: InferEnv -> [(Name, TopLevel)] -> Either InferError InferEnv
 inferTop env []                  = Right env
 inferTop env ((name, expr) : xs) = case inferExpr env expr of
   Left  err -> Left err
@@ -415,7 +422,7 @@ normalize (Forall origVars qt) = Forall
 
   fv :: Type -> [TVar]
   fv (TVar tv) = [tv]
-  fv (TAp a b) = fv a ++ fv b
+  fv (TAp a b) = fv a <> fv b
   fv (TCon _ ) = []
 
   normtype :: Type -> Type

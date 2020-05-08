@@ -47,9 +47,12 @@ desugarExpr cursor = case cursorKind cursor of
     leftExpr  <- desugarExpr left
     rightExpr <- desugarExpr right
 
+    resultTyp <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
+    opTyp     <- note DesugarWeirdness $ fromClangType =<< cursorType left
+
     binOp     <- note UnknownBinaryOperation
       $ parseBinOp (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
-    let binOpBuiltin = Builtin cursor $ BuiltinBinOp binOp
+    let binOpBuiltin = Builtin cursor $ BuiltinBinOp binOp resultTyp opTyp
     pure $ App cursor (App cursor binOpBuiltin leftExpr) rightExpr
 
   UnaryOperator -> do
@@ -57,9 +60,12 @@ desugarExpr cursor = case cursorKind cursor of
 
     childExpr <- desugarExpr child
 
+    resultTyp <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
+    opTyp     <- note DesugarWeirdness $ fromClangType =<< cursorType child
+
     unOp      <- note UnknownUnaryOperation
       $ parseUnOp (fromJust $ T.matchKind @ 'UnaryOperator $ cursor)
-    let unOpBuiltin = Builtin cursor $ BuiltinUnOp unOp
+    let unOpBuiltin = Builtin cursor $ BuiltinUnOp unOp resultTyp opTyp
 
     pure $ App cursor unOpBuiltin childExpr
 
@@ -78,10 +84,14 @@ desugarExpr cursor = case cursorKind cursor of
   ArraySubscriptExpr -> do
     let [left, right] = cursorChildren cursor
 
-    leftExpr  <- desugarExpr left
-    rightExpr <- desugarExpr right
+    leftExpr     <- desugarExpr left
+    rightExpr    <- desugarExpr right
 
-    let subscriptBuiltin = Builtin cursor BuiltinArraySubscript
+    arrayTyp     <- note DesugarWeirdness $ fromClangType =<< cursorType left
+    subscriptTyp <- note DesugarWeirdness $ fromClangType =<< cursorType right
+
+    let subscriptBuiltin =
+          Builtin cursor $ BuiltinArraySubscript arrayTyp subscriptTyp
     pure $ App cursor (App cursor subscriptBuiltin leftExpr) rightExpr
 
   CallExpr -> do
