@@ -127,7 +127,7 @@ desugarBlockOne cursor = case cursorKind cursor of
         condition <- desugarExpr cond
         expr      <- desugarStmt thn
 
-        pure $ \_ -> If cursor condition expr (unit cursor)
+        pure $ \els -> If cursor condition expr els
 
       [cond, thn, els] -> do
         condition <- desugarExpr cond
@@ -156,7 +156,7 @@ desugarSingleChild cursor = do
   desugarExpr child
 
 desugarTopLevelFunction
-  :: MonadError DesugarError m => T.CursorK 'FunctionDecl -> m TopLevel
+  :: MonadError DesugarError m => SomeFunctionCursor -> m TopLevel
 desugarTopLevelFunction cursor = do
   -- these are typically the first children but I really want to be safe here 
   let parameterF :: Fold Cursor (T.CursorK 'ParmDecl)
@@ -166,7 +166,7 @@ desugarTopLevelFunction cursor = do
   let bodyF :: Fold Cursor (T.CursorK 'CompoundStmt)
       bodyF = cursorChildrenF . folding (T.matchKind @ 'CompoundStmt)
 
-  let untypedCursor = T.withoutKind cursor
+  let untypedCursor = unwrapSomeFunction cursor
   let parameters    = untypedCursor ^.. parameterF
   let name          = nameFromBS $ cursorSpelling untypedCursor
 
@@ -199,12 +199,12 @@ desugarParameters = foldlM go id
     pure $ cont . lam
 
 desugarSCCTopLevel
-  :: MonadError DesugarError m => G.SCC FunctionCursor -> m TopLevel
+  :: MonadError DesugarError m => G.SCC SomeFunctionCursor -> m TopLevel
 desugarSCCTopLevel (G.AcyclicSCC cursor ) = desugarTopLevelFunction cursor
 desugarSCCTopLevel (G.CyclicSCC  cursors) = do
   topLevelFunctions <- traverse desugarTopLevelFunction cursors
   let properFunctions = topLevelFunctions ^.. each . folding (preview _TLLet)
   properFunctions & TLLetRecursive & pure
 
-desugarTopLevel :: [G.SCC FunctionCursor] -> Either DesugarError [TopLevel]
+desugarTopLevel :: [G.SCC SomeFunctionCursor] -> Either DesugarError [TopLevel]
 desugarTopLevel = traverse desugarSCCTopLevel

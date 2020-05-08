@@ -21,7 +21,6 @@ import           Data.Foldable                  ( for_
                                                 , foldlM
                                                 )
 import           Data.Function                  ( (&) )
-import           Data.Maybe                     ( fromJust )
 import           Debug.Trace                    ( traceM )
 
 lily :: FilePath -> IO ()
@@ -29,19 +28,14 @@ lily filepath = do
   tu <- createTranslationUnit filepath []
   printAST tu
 
-
   putStrLn "----------------------"
   let scc = recursiveComponents tu
   print scc
 
   putStrLn "----------------------"
-  case
-      desugarTopLevel
-      $   fmap (fromJust . toFunction . unwrapSomeFunction) -- TODO: this is unsafe! will crash on encountering FunctionTemplate!
-      <$> scc
-    of
-      Right x   -> for_ x print
-      Left  err -> putStrLn $ "Desugaring failed! Error: " <> show err
+  case desugarTopLevel scc of
+    Right x   -> for_ x print
+    Left  err -> putStrLn $ "Desugaring failed! Error: " <> show err
 
   putStrLn "----------------------"
   let initialEnv = mempty
