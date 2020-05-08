@@ -57,15 +57,15 @@ instance Pretty Type where
 
 prettyType :: S.Set Pred -> Type -> PP.Doc ann
 prettyType ps = \case
-  (TVar (TV n _)) -> "'" <> pretty n
-  (TCon (TC n _)) -> pretty n
-  (LinArrow a b ) -> prettyLeft ps a <+> "-o>" <+> prettyType ps b
-  (UnArrow  a b ) -> prettyLeft ps a <+> "-●>" <+> prettyType ps b
-  (Arrow    a b ) -> prettyLeft ps a <+> "->" <+> prettyType ps b
-  (VariableArrow (TVar (TV n _)) a b) ->
+  TVar (TV n _) -> pretty n
+  TCon (TC n _) -> pretty n
+  LinArrow a b -> prettyLeft ps a <+> "-o>" <+> prettyType ps b
+  UnArrow  a b -> prettyLeft ps a <+> "-●>" <+> prettyType ps b
+  Arrow    a b -> prettyLeft ps a <+> "->" <+> prettyType ps b
+  VariableArrow (TVar (TV n _)) a b ->
     prettyLeft ps a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
-  (TAp a@TAp{} b) -> PP.parens (prettyType ps a) <+> prettyType ps b
-  (TAp a       b) -> prettyType ps a <+> prettyType ps b
+  TAp a@TAp{} b -> PP.parens (prettyType ps a) <+> prettyType ps b
+  TAp a       b -> prettyType ps a <+> prettyType ps b
  where
   prettyLeft ps a = maybeParenArrow isFunction a (prettyType ps a)
   isFunction f = PFun f `S.member` ps
