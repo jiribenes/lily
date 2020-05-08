@@ -14,14 +14,24 @@ import           Clang
 import           Core.Desugar                   ( desugarTopLevel )
 import           Infer                          ( inferTop
                                                 , InferEnv
+                                                , typeEnv
                                                 )
 import           Type                           ( nameFromBS )
 import           Data.Graph                     ( SCC(..) )
-import           Data.Foldable                  ( for_
+import           Data.Foldable                  ( traverse_
+                                                , for_
                                                 , foldlM
                                                 )
 import           Data.Function                  ( (&) )
 import           Debug.Trace                    ( traceM )
+import           Data.Text.Prettyprint.Doc.Render.Text
+                                                ( putDoc )
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(pretty)
+                                                )
+import           Control.Lens
+import qualified Data.Map                      as M
+import qualified Data.Text.Prettyprint.Doc     as PP
 
 lily :: FilePath -> IO ()
 lily filepath = do
@@ -34,15 +44,19 @@ lily filepath = do
 
   putStrLn "----------------------"
   case desugarTopLevel scc of
-    Right x   -> for_ x print
+    Right xs  -> putDoc $ PP.align $ PP.vcat $ pretty <$> xs
     Left  err -> putStrLn $ "Desugaring failed! Error: " <> show err
 
   putStrLn "----------------------"
   let initialEnv = mempty
   finalEnv <- foldlM go initialEnv scc
-  print finalEnv
-  pure ()
+
+  let finalInferEnv = finalEnv ^. typeEnv . to M.toList
+
+  putDoc $ "let" <+> PP.align (PP.vcat $ prettify <$> finalInferEnv)
  where
+  prettify (name, typ) = PP.fill 5 (pretty name) <+> "::" <+> pretty typ
+
   go :: InferEnv -> SCC SomeFunctionCursor -> IO InferEnv
   go env (AcyclicSCC func) =
     case inferTop env [(func & someSpelling & nameFromBS, func)] of

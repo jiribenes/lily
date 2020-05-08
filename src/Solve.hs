@@ -23,21 +23,25 @@ import qualified Data.List.NonEmpty            as NE
 import           Type
 import           MonadFresh
 import           Unify
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
 
 data Constraint = CEq Type Type
                 | CExpInst Type Scheme
                 | CImpInst Type (S.Set TVar) Type
                 | CCtor Name Type -- new addition: `is constructor of`
                 | CIn Name (NonEmpty Type)
-                deriving stock (Ord, Eq)
+                deriving stock (Ord, Show, Eq)
 
-instance Show Constraint where
-  show (CEq      x y) = show x <> " ~ " <> show y
-  show (CExpInst t s) = show t <> " ≼ " <> show s
-  show (CImpInst t1 mono t2) =
-    show t1 <> " ≼{" <> show (S.toList mono) <> "} " <> show t2
-  show (CCtor name t ) = show name <> " c " <> show t
-  show (CIn   name ts) = show name <> " " <> (unwords $ NE.toList $ show <$> ts)
+instance Pretty Constraint where
+  pretty (CEq      x y) = pretty x <+> "~" <+> pretty y
+  pretty (CExpInst t s) = pretty t <+> "≼" <+> pretty s
+  pretty (CImpInst t1 mono t2) =
+    pretty t1 <+> "≼{" <+> pretty (S.toList mono) <+> "}" <+> pretty t2
+  pretty (CCtor name t ) = pretty name <+> "c" <+> pretty t
+  pretty (CIn   name ts) = pretty name <+> PP.hsep (NE.toList $ pretty <$> ts)
 
 instance ActiveTypeVars Constraint where
   atv (CEq t1 t2) = ftv t1 `S.union` ftv t2
@@ -138,7 +142,7 @@ solve :: [Constraint] -> Solve (Subst, [Constraint])
 solve [] = pure (emptySubst, [])
 solve cs
   | all (not . solvable) (chooseOne cs) = pure (emptySubst, cs)
-  | otherwise = traceShow ("constraints left : ", cs) $ do
+  | otherwise = traceShow ("constraints left : ", pretty cs) $ do
     env <- view classEnv
     solve' $ nextSolvable $ simplifyMany env cs
 
@@ -180,7 +184,7 @@ chooseOne xs = [ (x, x `delete` xs) | x <- xs ]
 
 nextSolvable :: [Constraint] -> (Constraint, [Constraint])
 nextSolvable xs =
-  trace ("all solvable: " <> unlines (show <$> allSolvable xs))
+  trace ("all solvable: " <> unlines (show . pretty <$> allSolvable xs))
     $ fromJust
     . find solvable
     . chooseOne
@@ -197,7 +201,7 @@ instantiate (Forall xs qt) = do
 -- TODO: This function is a bit incorrect, see below
 generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
 generalize unsolved free t =
-  traceShow (("tyVars", tyVars), ("preds", preds))
+  traceShow (("tyVars", pretty $ S.toList tyVars), ("preds", pretty preds))
     $ Forall (S.toList tyVars) (preds :=> t)
  where
   tyVars = ftv t `S.difference` free

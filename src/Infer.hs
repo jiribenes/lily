@@ -41,6 +41,7 @@ import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
 import           Language.C.Clang.Type          ( typeResultType )
+import           Data.Text.Prettyprint.Doc      ( Pretty(pretty) )
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving stock (Eq, Show)
@@ -133,17 +134,17 @@ inferType env expr = do
 
   traceShowM
     ( "unsolved:"
-    , unsolved
+    , pretty unsolved
     , "subst:"
-    , subst
+    , pretty subst
     , "type:"
-    , t
+    , pretty t
     , "subst-type"
-    , subst `apply` t
+    , pretty $ subst `apply` t
     , "preds:"
-    , unsolved
+    , pretty $ unsolved
     , "subst-preds:"
-    , subst `apply` unsolved
+    , pretty $ subst `apply` unsolved
     )
 
     -- Ideally, do a difference between these lists, but that's too hard for now

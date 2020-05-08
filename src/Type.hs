@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE OverloadedLists #-}
@@ -11,16 +12,19 @@ import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import           Data.Text                      ( Text )
 
-import           Data.List                      ( intercalate )
 import           Data.String                    ( IsString )
 import           Data.ByteString.Char8          ( ByteString )
 import           Data.Text.Encoding             ( decodeUtf8 )
 import qualified Data.Text                     as T
 import           Data.List.NonEmpty             ( NonEmpty )
 import qualified Data.List.NonEmpty            as NE
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
 
 newtype Name = Name { unName :: Text }
-  deriving newtype (Eq, Ord, IsString)
+  deriving newtype (Eq, Ord, IsString, Pretty)
 
 instance Show Name where
   show = T.unpack . unName
@@ -29,34 +33,66 @@ nameFromBS :: ByteString -> Name
 nameFromBS = Name . decodeUtf8
 
 data TVar = TV Name Kind deriving stock (Show, Eq, Ord)
+
+instance Pretty TVar where
+  pretty (TV n StarKind) = pretty n
+  pretty (TV n k       ) = PP.parens $ pretty n <+> "::" <+> pretty k
+
 data TCon = TC Name Kind deriving stock (Show, Eq, Ord)
+
+instance Pretty TCon where
+  pretty (TC n StarKind) = pretty n
+  pretty (TC n k       ) = PP.parens $ pretty n <+> "::" <+> pretty k
 
 -- | Types are either type variables, type constructors or a type applied to another
 data Type = TVar TVar
           | TCon TCon
           | TAp Type Type
-          deriving stock (Eq, Ord)
+          deriving stock (Eq, Show, Ord)
+
+instance Pretty Type where
+  pretty = prettyType mempty
+
+prettyType :: S.Set Pred -> Type -> PP.Doc ann
+prettyType _ (TVar (TV n _)) = "'" <> pretty n
+prettyType _ (TCon (TC n _)) = "" <> pretty n
+
+prettyType ps (LinArrow a@SomeArrow{} b) =
+  PP.parens (prettyType ps a) <+> "-o>" <+> prettyType ps b
+prettyType ps (LinArrow a b) = prettyType ps a <+> "-o>" <+> prettyType ps b
+
+prettyType ps (UnArrow a@SomeArrow{} b) =
+  PP.parens (prettyType ps a) <+> "-●>" <+> prettyType ps b
+prettyType ps (UnArrow a b) = prettyType ps a <+> "-●>" <+> prettyType ps b
+
+prettyType ps (Arrow a@SomeArrow{} b) =
+  PP.parens (prettyType ps a) <+> "->" <+> prettyType ps b
+prettyType ps (Arrow a b) = prettyType ps a <+> "->" <+> prettyType ps b
+
+prettyType ps (f@(TVar (TV n _)) `TAp` a@SomeArrow{} `TAp` b)
+  | PFun f `S.member` ps
+  = PP.parens (prettyType ps a)
+    <+> "-"
+    <>  PP.braces (pretty n)
+    <>  ">"
+    <+> prettyType ps b
+prettyType ps (f@(TVar (TV n _)) `TAp` a `TAp` b) | PFun f `S.member` ps =
+  prettyType ps a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
+
+prettyType ps (TAp a@TAp{} b) = PP.parens (prettyType ps a) <+> prettyType ps b
+prettyType ps (TAp a       b) = prettyType ps a <+> prettyType ps b
 
 -- | Kind is the type of type
 -- needed for type constructors
 data Kind = StarKind
           | ArrowKind Kind Kind
-          deriving stock (Eq, Ord)
+          deriving stock (Eq, Show, Ord)
 
-instance Show Kind where
-  show StarKind                           = "Type"
-  show (ArrowKind StarKind StarKind     ) = "Type -> Type"
-  show (ArrowKind a        b@ArrowKind{}) = show a <> " -> " <> show b
-  show (ArrowKind a b) = "(" <> show a <> " -> " <> show b <> ")"
-
-instance Show Type where
-  show (TVar (TV a _)) = "'" <> show a
-  show (TCon (TC c _)) = show c
-  show (TCon c `TAp` a `TAp` b)
-    | c == conArrow    = "(" <> show a <> " -> " <> show b <> ")"
-    | c == conLinArrow = "(" <> show a <> " -o> " <> show b <> ")"
-    | c == conUnArrow  = "(" <> show a <> " -●> " <> show b <> ")"
-  show (TAp a b) = "(" <> show a <> " " <> show b <> ")"
+instance PP.Pretty Kind where
+  pretty StarKind = "Type"
+  pretty (ArrowKind a@ArrowKind{} b) =
+    PP.parens (pretty a) <+> "->" <+> pretty b
+  pretty (ArrowKind a b) = pretty a <+> "->" <+> pretty b
 
 typeUnit :: Type
 typeUnit = TCon $ TC "Unit" StarKind
@@ -94,11 +130,11 @@ typeUnArrow :: Type
 typeUnArrow = TCon conUnArrow
 
 -- | (typeclass) Predicate 
-data Pred = IsIn Name (NonEmpty Type) deriving stock (Eq, Ord)
+data Pred = IsIn Name (NonEmpty Type) deriving stock (Eq, Show, Ord)
 
-instance Show Pred where
-  show (PGeq x y ) = show x <> " ⩾ " <> show y
-  show (IsIn n ts) = show n <> " " <> (unwords $ NE.toList (show <$> ts))
+instance Pretty Pred where
+  pretty (PGeq x y ) = pretty x <+> "⩾" <+> pretty y
+  pretty (IsIn n ts) = pretty n <+> (PP.sep $ NE.toList $ pretty <$> ts)
 
 -- constructors for the four most used predicates
 pattern PFun :: Type -> Pred
@@ -110,42 +146,36 @@ pattern PGeq x y <- IsIn "Geq" [x, y] where PGeq x y = IsIn "Geq" [x, y]
 pattern PNum :: Type -> Pred
 pattern PNum x <- IsIn "Num" [x] where PNum x = IsIn "Num" [x]
 
+pattern LinArrow :: Type -> Type -> Type
+pattern LinArrow a b <- (extractSomeArrow (== conLinArrow) -> Just (a, b)) where LinArrow a b = TCon conLinArrow `TAp` a `TAp` b
+
+pattern UnArrow :: Type -> Type -> Type
+pattern UnArrow a b <- (extractSomeArrow (== conUnArrow) -> Just (a, b)) where UnArrow a b = TCon conUnArrow `TAp` a `TAp` b
+
+pattern Arrow :: Type -> Type -> Type
+pattern Arrow a b <- (extractSomeArrow (== conArrow) -> Just (a, b)) where Arrow a b = TCon conArrow `TAp` a `TAp` b
+
+-- This pattern is unidirectional only on purpose!
+pattern SomeArrow :: Type -> Type -> Type
+pattern SomeArrow a b <- (extractSomeArrow isArrow -> Just (a, b))
+
+isArrow :: TCon -> Bool
+isArrow = flip elem arrows
+ where
+  arrows :: [TCon]
+  arrows = [conLinArrow, conUnArrow, conArrow]
+
+extractSomeArrow :: (TCon -> Bool) -> Type -> Maybe (Type, Type)
+extractSomeArrow p (TCon c `TAp` a `TAp` b) =
+  if p c then Just (a, b) else Nothing
+extractSomeArrow _ _ = Nothing
+
 -- | Qualified `a` is an `a` with a list of predicates
-data Qual a = [Pred] :=> a deriving stock (Eq, Ord)
+data Qual a = [Pred] :=> a deriving stock (Eq, Show, Ord)
 
-instance Show (Qual Type) where
-  show (preds :=> t) =
-    "("
-      <> (intercalate ", " . fmap show $ preds)
-      <> ") => "
-      <> showPretty (S.fromList preds) t
-
--- | Helper function for showing a type nicely
-showPretty :: S.Set Pred -> Type -> String
-showPretty _ (TVar (TV a _)) = "'" <> show a
-showPretty ps ((TCon c) `TAp` a `TAp` b)
-  | c == conArrow
-  = "(" <> showPretty ps a <> " -> " <> showPretty ps b <> ")"
-  | c == conLinArrow
-  = "(" <> showPretty ps a <> " -o> " <> showPretty ps b <> ")"
-  | c == conUnArrow
-  = "(" <> showPretty ps a <> " -●> " <> showPretty ps b <> ")"
-showPretty ps (f `TAp` a `TAp` b)
-  | isOnlyFun ps f
-  = "(" <> showPretty ps a <> " -> " <> showPretty ps b <> ")"
-  | PFun f `S.member` ps
-  = "("
-    <> showPretty ps a
-    <> " -"
-    <> showPretty ps f
-    <> "> "
-    <> showPretty ps b
-    <> ")"
-showPretty _ (TCon (TC c _))                  = show c
-showPretty ps (TAp (TCon c) b) | c == conList = "[" <> showPretty ps b <> "]"
-showPretty ps (TAp a b) =
-  "(" <> showPretty ps a <> " " <> showPretty ps b <> ")"
-
+instance Pretty (Qual Type) where
+  pretty (preds :=> t) =
+    PP.tupled (pretty <$> preds) <+> "=>" <+> prettyType (S.fromList preds) t
 
 isOnlyFun :: S.Set Pred -> Type -> Bool
 isOnlyFun ps t = S.singleton (PFun t) == relevantPreds ps t
@@ -153,22 +183,25 @@ relevantPreds :: S.Set Pred -> Type -> S.Set Pred
 relevantPreds ps t = (\(IsIn _ xs) -> t `elem` xs) `S.filter` ps
 
 -- | A type scheme is a list of type variables and a qualified type
-data Scheme = Forall [TVar] (Qual Type) deriving stock (Eq, Ord)
+data Scheme = Forall [TVar] (Qual Type) deriving stock (Eq, Show, Ord)
 
-instance Show Scheme where
-  show (Forall tvs qt) =
-    "forall "
-      <> unwords ((\(TV a k) -> show a <> showKind k) <$> tvs)
-      <> " . "
-      <> show qt
+instance Pretty Scheme where -- doesn't use the Pretty (Qual Type) instance to be prettier!
+  pretty (Forall tvs (preds :=> t)) = PP.align (PP.sep inner)
    where
-    showKind k = case k of
-      StarKind      -> ""
-      ArrowKind _ _ -> ": " <> show k
+    inner :: [PP.Doc ann]
+    inner =
+      [ "forall" <+> PP.align (PP.sep (pretty <$> tvs))
+      , "." <+> PP.tupled (pretty <$> preds)
+      , "=>" <+> prettyType (S.fromList preds) t
+      ]
 
 -- | Substitution is a map from type variables to actual types
 newtype Subst = Subst (M.Map TVar Type) deriving stock (Eq, Ord, Show)
                                         deriving newtype (Semigroup, Monoid)
+
+instance Pretty Subst where
+  pretty (Subst m) = PP.list (prettyOne <$> M.toList m)
+    where prettyOne (tv, ty) = pretty tv <+> ":=" <+> pretty ty
 
 emptySubst :: Subst
 emptySubst = mempty
@@ -178,7 +211,7 @@ compose :: Subst -> Subst -> Subst
   Subst $ M.map (apply (Subst s1)) s2 `M.union` s1
 
 class Substitutable a where
-    apply :: Subst -> a -> a
+  apply :: Subst -> a -> a
 
 instance Substitutable TVar where
   apply (Subst s) a = tv
@@ -214,7 +247,7 @@ instance Substitutable a => Substitutable (M.Map k a) where
   apply s = M.map (apply s)
 
 class FreeTypeVars a where
-    ftv   :: a -> S.Set TVar
+  ftv   :: a -> S.Set TVar
 
 instance FreeTypeVars Type where
   ftv TCon{}        = S.empty
@@ -238,7 +271,7 @@ instance FreeTypeVars a => FreeTypeVars (S.Set a) where
   ftv = foldr (S.union . ftv) S.empty
 
 class ActiveTypeVars a where
-    atv :: a -> S.Set TVar
+  atv :: a -> S.Set TVar
 
 instance ActiveTypeVars a => ActiveTypeVars [a] where
   atv = foldr (S.union . atv) S.empty
