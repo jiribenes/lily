@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Unify where
 
@@ -9,7 +10,10 @@ import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 
 import           Control.Monad.Except
-
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
                       | KindMismatch TVar Type
@@ -17,25 +21,23 @@ data UnificationError = InfiniteType TVar Type
                       | Unsatisfied [Pred]
                       deriving stock (Eq, Ord)
 
-instance Show UnificationError where
-  show (UnificationFail a b) =
-    unlines ["Cannot unify: ", "\t\t" <> show a, " with: ", "\t\t" <> show b]
-  show (KindMismatch (TV a k) b) =
-    "Kind mismatch: "
-      <> show a
-      <> " and "
-      <> show b
-      <> ", because "
-      <> show k
-      <> " /= "
-      <> show (typeKind b)
-  show (InfiniteType (TV a _) b) =
-    "Cannot construct infinite type: " <> show a <> " = " <> show b
-  show (ConstructorNotFound n) = "Cannot find constructor: " <> show n
-  show (Unsatisfied preds) =
-    unlines
-      $ "Cannot satisfy the following predicates: "
-      : (("\t\t" <>) . show <$> preds)
+instance Pretty UnificationError where
+  pretty (UnificationFail a b) = PP.align
+    (PP.vsep
+      ["Cannot unify:", PP.indent 4 (pretty a), "with:", PP.indent 4 (pretty b)]
+    )
+  pretty (KindMismatch (TV a k) b) = PP.align
+    (PP.vsep
+      [ "Kind mismatch between:" <+> pretty a <+> "and" <+> pretty b
+      , "because: " <+> pretty k <+> "/=" <+> pretty (typeKind b)
+      ]
+    )
+  pretty (InfiniteType (TV a _) b) =
+    "Cannot construct infinite type:" <+> pretty a <+> "=" <+> pretty b
+  pretty (ConstructorNotFound n) = "Cannot find constructor:" <+> pretty n
+  pretty (Unsatisfied preds) =
+    "Cannot satisfy the following predicates: "
+      <+> PP.indent 4 (PP.vsep $ pretty <$> preds)
 
 unifies :: MonadError UnificationError m => Type -> Type -> m Subst
 unifies t1 t2 | t1 == t2               = pure emptySubst

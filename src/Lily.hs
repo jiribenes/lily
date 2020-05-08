@@ -61,7 +61,7 @@ lily filepath = do
   go env (AcyclicSCC func) =
     case inferTop env [(func & someSpelling & nameFromBS, func)] of
       Left err -> do
-        putStrLn $ "Error happened! " <> show err
+        putStrLn $ "Error happened! " <> show (pretty err)
         pure env
       Right newEnv -> pure newEnv
   go env (CyclicSCC funcs) = do

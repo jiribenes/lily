@@ -142,7 +142,8 @@ solve :: [Constraint] -> Solve (Subst, [Constraint])
 solve [] = pure (emptySubst, [])
 solve cs
   | all (not . solvable) (chooseOne cs) = pure (emptySubst, cs)
-  | otherwise = traceShow ("constraints left : ", pretty cs) $ do
+  | otherwise = {-traceShow ("constraints left : ", pretty cs) $-}
+                do
     env <- view classEnv
     solve' $ nextSolvable $ simplifyMany env cs
 
@@ -184,11 +185,9 @@ chooseOne xs = [ (x, x `delete` xs) | x <- xs ]
 
 nextSolvable :: [Constraint] -> (Constraint, [Constraint])
 nextSolvable xs =
-  trace ("all solvable: " <> unlines (show . pretty <$> allSolvable xs))
-    $ fromJust
-    . find solvable
-    . chooseOne
-    $ xs
+  {-trace ("all solvable: " <> (show $ PP.group $ PP.hsep $ pretty <$> allSolvable xs))
+      $-}
+                  fromJust . find solvable . chooseOne $ xs
   where allSolvable zs = let ys = chooseOne zs in [ x | x <- ys, solvable x ]
 
 instantiate :: Scheme -> Solve (Type, [Constraint])
@@ -201,8 +200,9 @@ instantiate (Forall xs qt) = do
 -- TODO: This function is a bit incorrect, see below
 generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
 generalize unsolved free t =
-  traceShow (("tyVars", pretty $ S.toList tyVars), ("preds", pretty preds))
-    $ Forall (S.toList tyVars) (preds :=> t)
+  {-traceShow (("tyVars", pretty $ S.toList tyVars), ("preds", pretty preds))
+    $-}
+                             Forall (S.toList tyVars) (preds :=> t)
  where
   tyVars = ftv t `S.difference` free
   preds  = filter (\(IsIn _ xs) -> any (`isIn` tyVars) xs) (toPreds unsolved) -- This for example discharges any (Un $ConcreteType) even when it's really not true! That's a real problem! TODO TODO TODO

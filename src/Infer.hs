@@ -41,7 +41,10 @@ import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Debug.Trace -- TODO
 import           Language.C.Clang.Type          ( typeResultType )
-import           Data.Text.Prettyprint.Doc      ( Pretty(pretty) )
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving stock (Eq, Show)
@@ -61,18 +64,23 @@ data InferError = FromSolve SolveError
                 | UnexpectedParameterDeclarationOutsideFunction
                 | UnknownASTNodeKind CursorKind
 
-instance Show InferError where
-  show (FromSolve x) = show x
-  show (UnboundVariables as) =
-    "Not in scope: " <> unlines [ "\t\t" <> show a | a <- as ]
-  show (WrongPredicate   pred) = "Wrong predicate: " <> show pred
-  show (WrongConstructor n   ) = "Wrong constructor: " <> show n
-  show (WrongConstraint  cs  ) = "Wrong constraints: " <> show cs
-  show Weirdness               = "Encountered general weirdness! What?"
-  show UnexpectedParameterDeclarationOutsideFunction
+instance Pretty InferError where
+  pretty (FromSolve x) = pretty x
+  pretty (UnboundVariables as) =
+    "Not in scope:" <+> PP.indent 4 (PP.vsep $ pretty <$> as)
+  pretty (WrongPredicate   pred) = "Wrong predicate:" <+> pretty pred
+  pretty (WrongConstructor n   ) = "Wrong constructor:" <+> pretty n
+  pretty (WrongConstraint cs) =
+    "Wrong constraints:" <+> PP.indent 4 (PP.vsep $ pretty <$> cs)
+  pretty Weirdness = "Encountered general weirdness! What?"
+  pretty UnexpectedParameterDeclarationOutsideFunction
     = "Unexpected parameter declaration outside a function declaration. Is your AST ok?"
-  show (UnknownASTNodeKind k) =
-    "Unknown AST node: '" <> show k <> "'. Cannot recover!"
+  pretty (UnknownASTNodeKind k) = PP.align
+    (PP.vsep
+      [ "Unknown AST node:" <+> PP.squotes (pretty (show k))
+      , "Cannot recover automatically, sorry!"
+      ]
+    )
     -- show (Ambiguous cs) = unlines ["Cannot match expected type: " <> show a <> " with actual type: " <> show b  | (a, b) <- cs]
     -- show (WrongKind a b) = "Wrong kind!"
 
@@ -132,6 +140,7 @@ inferType env expr = do
   -- solve all constraints together and get the resulting substitution
   (subst, unsolved) <- runSolve (cs <> cs')
 
+  {-
   traceShowM
     ( "unsolved:"
     , pretty unsolved
@@ -146,6 +155,7 @@ inferType env expr = do
     , "subst-preds:"
     , pretty $ subst `apply` unsolved
     )
+    -}
 
     -- Ideally, do a difference between these lists, but that's too hard for now
   unless (length unsolved == length (toPreds unsolved))
