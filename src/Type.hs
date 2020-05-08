@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
 {-# LANGUAGE DerivingStrategies #-}
@@ -22,6 +23,8 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
+import           Data.Maybe                     ( isJust )
+import           Control.Applicative            ( (<|>) )
 
 newtype Name = Name { unName :: Text }
   deriving newtype (Eq, Ord, IsString, Pretty)
@@ -54,33 +57,19 @@ instance Pretty Type where
   pretty = prettyType mempty
 
 prettyType :: S.Set Pred -> Type -> PP.Doc ann
-prettyType _ (TVar (TV n _)) = "'" <> pretty n
-prettyType _ (TCon (TC n _)) = "" <> pretty n
-
-prettyType ps (LinArrow a@SomeArrow{} b) =
-  PP.parens (prettyType ps a) <+> "-o>" <+> prettyType ps b
-prettyType ps (LinArrow a b) = prettyType ps a <+> "-o>" <+> prettyType ps b
-
-prettyType ps (UnArrow a@SomeArrow{} b) =
-  PP.parens (prettyType ps a) <+> "-●>" <+> prettyType ps b
-prettyType ps (UnArrow a b) = prettyType ps a <+> "-●>" <+> prettyType ps b
-
-prettyType ps (Arrow a@SomeArrow{} b) =
-  PP.parens (prettyType ps a) <+> "->" <+> prettyType ps b
-prettyType ps (Arrow a b) = prettyType ps a <+> "->" <+> prettyType ps b
-
-prettyType ps (f@(TVar (TV n _)) `TAp` a@SomeArrow{} `TAp` b)
-  | PFun f `S.member` ps
-  = PP.parens (prettyType ps a)
-    <+> "-"
-    <>  PP.braces (pretty n)
-    <>  ">"
-    <+> prettyType ps b
-prettyType ps (f@(TVar (TV n _)) `TAp` a `TAp` b) | PFun f `S.member` ps =
-  prettyType ps a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
-
-prettyType ps (TAp a@TAp{} b) = PP.parens (prettyType ps a) <+> prettyType ps b
-prettyType ps (TAp a       b) = prettyType ps a <+> prettyType ps b
+prettyType ps = \case
+  (TVar (TV n _)) -> "'" <> pretty n
+  (TCon (TC n _)) -> pretty n
+  (LinArrow a b ) -> prettyLeft ps a <+> "-o>" <+> prettyType ps b
+  (UnArrow  a b ) -> prettyLeft ps a <+> "-●>" <+> prettyType ps b
+  (Arrow    a b ) -> prettyLeft ps a <+> "->" <+> prettyType ps b
+  (VariableArrow (TVar (TV n _)) a b) ->
+    prettyLeft ps a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
+  (TAp a@TAp{} b) -> PP.parens (prettyType ps a) <+> prettyType ps b
+  (TAp a       b) -> prettyType ps a <+> prettyType ps b
+ where
+  prettyLeft ps a = maybeParenArrow isFunction a (prettyType ps a)
+  isFunction f = PFun f `S.member` ps
 
 -- | Kind is the type of type
 -- needed for type constructors
@@ -147,28 +136,45 @@ pattern PNum :: Type -> Pred
 pattern PNum x <- IsIn "Num" [x] where PNum x = IsIn "Num" [x]
 
 pattern LinArrow :: Type -> Type -> Type
-pattern LinArrow a b <- (extractSomeArrow (== conLinArrow) -> Just (a, b)) where LinArrow a b = TCon conLinArrow `TAp` a `TAp` b
+pattern LinArrow a b <- (extractSpecificArrow (== conLinArrow) -> Just (a, b))
+  where LinArrow a b = TCon conLinArrow `TAp` a `TAp` b
 
 pattern UnArrow :: Type -> Type -> Type
-pattern UnArrow a b <- (extractSomeArrow (== conUnArrow) -> Just (a, b)) where UnArrow a b = TCon conUnArrow `TAp` a `TAp` b
+pattern UnArrow a b <- (extractSpecificArrow (== conUnArrow) -> Just (a, b))
+  where UnArrow a b = TCon conUnArrow `TAp` a `TAp` b
 
 pattern Arrow :: Type -> Type -> Type
-pattern Arrow a b <- (extractSomeArrow (== conArrow) -> Just (a, b)) where Arrow a b = TCon conArrow `TAp` a `TAp` b
+pattern Arrow a b <- (extractSpecificArrow (== conArrow) -> Just (a, b))
+  where Arrow a b = TCon conArrow `TAp` a `TAp` b
 
 -- This pattern is unidirectional only on purpose!
-pattern SomeArrow :: Type -> Type -> Type
-pattern SomeArrow a b <- (extractSomeArrow isArrow -> Just (a, b))
+pattern SpecificArrow :: Type -> Type -> Type
+pattern SpecificArrow a b <- (extractSpecificArrow isSpecificArrow -> Just (a, b))
 
-isArrow :: TCon -> Bool
-isArrow = flip elem arrows
+pattern VariableArrow :: Type -> Type -> Type -> Type
+pattern VariableArrow f a b <- (extractVariableArrow -> Just (f, a, b))
+
+extractVariableArrow :: Type -> Maybe (Type, Type, Type)
+extractVariableArrow (f@TVar{} `TAp` a `TAp` b) = Just (f, a, b)
+extractVariableArrow _                          = Nothing
+
+isSpecificArrow :: TCon -> Bool
+isSpecificArrow = flip elem arrows
  where
   arrows :: [TCon]
   arrows = [conLinArrow, conUnArrow, conArrow]
 
-extractSomeArrow :: (TCon -> Bool) -> Type -> Maybe (Type, Type)
-extractSomeArrow p (TCon c `TAp` a `TAp` b) =
+extractSpecificArrow :: (TCon -> Bool) -> Type -> Maybe (Type, Type)
+extractSpecificArrow p (TCon c `TAp` a `TAp` b) =
   if p c then Just (a, b) else Nothing
-extractSomeArrow _ _ = Nothing
+extractSpecificArrow _ _ = Nothing
+
+isArrow :: (Type -> Bool) -> Type -> Bool
+isArrow p (f@(TVar (TV n _)) `TAp` a `TAp` b) = p f
+isArrow _ t = isJust $ extractSpecificArrow isSpecificArrow $ t
+
+maybeParenArrow :: (Type -> Bool) -> Type -> PP.Doc ann -> PP.Doc ann
+maybeParenArrow p f doc = if isArrow p f then PP.parens doc else doc
 
 -- | Qualified `a` is an `a` with a list of predicates
 data Qual a = [Pred] :=> a deriving stock (Eq, Show, Ord)
