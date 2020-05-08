@@ -23,7 +23,9 @@ module Clang
   , printAST
   , BinOp(..)
   , parseBinOp
+  , isAssignOp
   , UnaryFixity(..)
+  , getFixity
   , UnOp(..)
   , parseUnOp
   )
@@ -109,10 +111,10 @@ allFunctions = cursorDescendantsF . folding toSomeFunction
 
 getFunctionBody
   :: SomeFunctionCursor -> TranslationUnit -> Maybe SomeFunctionCursor
-getFunctionBody def tu = translationUnitCursor tu ^? functionBodyF def
+getFunctionBody def tu = translationUnitCursor tu ^? functionBodyF
  where
-  functionBodyF :: SomeFunctionCursor -> Fold Cursor SomeFunctionCursor
-  functionBodyF def = allFunctions . filtered
+  functionBodyF :: Fold Cursor SomeFunctionCursor
+  functionBodyF = allFunctions . filtered
     (\x ->
       (  cursorCanonical (unwrapSomeFunction x)
       == (unwrapSomeFunction def)

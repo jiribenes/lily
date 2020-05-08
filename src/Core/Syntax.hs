@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -29,15 +30,15 @@ data Expr' t c = Var c Name
                | If c (Expr' t c) (Expr' t c) (Expr' t c)
                | Fix c (Expr' t c)
                | Builtin c BuiltinExpr
+          deriving stock (Eq, Ord, Functor)
 
 --          | Ctor Name Expr
 --          | Elim Name [Name] Expr Expr
-          deriving (Eq, Ord)
 
 data BuiltinExpr = BuiltinBinOp BinOp
                  | BuiltinUnOp UnOp
                  | BuiltinUnit
-  deriving (Eq, Ord)
+  deriving stock (Eq, Ord)
 
 instance Show BuiltinExpr where
   show (BuiltinBinOp bop) =
@@ -45,15 +46,11 @@ instance Show BuiltinExpr where
   show (BuiltinUnOp uop) = "@builtin_unop_" <> drop (length "UnOp") (show uop)
   show BuiltinUnit       = "@builtin_unit"
 
-deriving instance (Functor (Expr' t))
-
 type Expr = Expr' (Maybe ClangType) Cursor
 type CursorExpr t = Expr' t Cursor
 
 data Let t c = Let c Name (Expr' t c)
-  deriving (Eq, Ord)
-
-deriving instance (Functor (Let t))
+  deriving stock (Eq, Ord, Functor)
 
 instance Show (Let t Cursor) where
   show (Let _ name expr) = "let " <> show name <> " = " <> show expr
@@ -61,11 +58,8 @@ instance Show (Let t Cursor) where
 data TopLevel' t c = TLLet (Let t c)
                    | TLLetRecursive [Let t c]
                    | TLLetNoBody c Name
-  deriving (Eq, Ord)
-
+  deriving stock (Eq, Ord, Functor)
 makePrisms ''TopLevel'
-
-deriving instance (Functor (TopLevel' t))
 
 type TopLevel = TopLevel' (Maybe ClangType) Cursor
 

@@ -100,7 +100,7 @@ class (Monad m) => MonadFresh n m where
 -- the actual implementation
 instance Monad m => MonadFresh n (FreshT n m) where
   fresh = FreshT $ do
-    _fresh <%= NE.fromList . NE.tail
+    _ <- _fresh <%= NE.fromList . NE.tail
     use (_fresh . _neHead)
   {-# INLINE fresh #-}
 
