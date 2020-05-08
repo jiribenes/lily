@@ -19,14 +19,18 @@ import           Control.Monad.Except           ( throwError
 import qualified Language.C.Clang.Cursor.Typed as T
 import           Data.Maybe                     ( fromJust )
 import           Clang
+import           ClangType
 import           Error
 import           Type                           ( nameFromBS
                                                 , Name(..)
                                                 )
 import           Data.Foldable                  ( foldlM )
 import           Control.Lens
-import           Debug.Trace                    ( traceM )
+import           Debug.Trace                    ( traceShowM
+                                                , traceM
+                                                )
 import qualified Data.Graph                    as G
+import           Data.Text.Prettyprint.Doc      ( Pretty(pretty) )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -49,6 +53,7 @@ desugarExpr cursor = case cursorKind cursor of
       $ parseBinOp (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
     let binOpBuiltin = Builtin cursor $ BuiltinBinOp binOp
     pure $ App cursor (App cursor binOpBuiltin leftExpr) rightExpr
+
   UnaryOperator -> do
     let [child] = cursorChildren cursor
 
@@ -59,9 +64,27 @@ desugarExpr cursor = case cursorKind cursor of
     let unOpBuiltin = Builtin cursor $ BuiltinUnOp unOp
 
     pure $ App cursor unOpBuiltin childExpr
+
   DeclRefExpr -> do
     let name = nameFromBS $ cursorSpelling cursor
     pure $ Var cursor name
+
+  CXXNewExpr -> do
+    child     <- note DesugarWeirdness $ cursorChildren cursor ^? _last
+    typ       <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
+
+    childExpr <- desugarExpr child
+
+    pure $ App cursor (Builtin cursor (BuiltinNew typ)) childExpr
+
+  ArraySubscriptExpr -> do
+    let [left, right] = cursorChildren cursor
+
+    leftExpr  <- desugarExpr left
+    rightExpr <- desugarExpr right
+
+    let subscriptBuiltin = Builtin cursor BuiltinArraySubscript
+    pure $ App cursor (App cursor subscriptBuiltin leftExpr) rightExpr
 
   CallExpr -> do
     -- TODO: handle single argument function calls!
@@ -69,10 +92,30 @@ desugarExpr cursor = case cursorKind cursor of
 
     pure $ foldl1 (App cursor) exprs
 
-  IntegerLiteral -> pure $ Literal cursor
+  MemberRefExpr -> do
+    case cursorChildren cursor of
+      [child] -> do
+        expr <- desugarExpr child
 
-  FirstExpr      -> desugarSingleChild cursor
-  other          -> error $ "found: " <> show other
+        let memberName = nameFromBS $ cursorSpelling cursor
+        let member     = Var cursor memberName
+
+        let memberRef  = Builtin cursor BuiltinMemberRef
+
+        pure $ App cursor (App cursor memberRef expr) member
+      [] -> do
+        traceM
+          "I don't support weird member reference for C++ classes yet! TODO"
+        throwError DesugarWeirdness
+      _ -> throwError DesugarWeirdness
+
+  IntegerLiteral        -> pure $ Literal cursor
+  CharacterLiteral      -> pure $ Literal cursor
+  CXXBoolLiteralExpr    -> pure $ Literal cursor
+  CXXNullPtrLiteralExpr -> pure $ Builtin cursor BuiltinNullPtr
+
+  FirstExpr             -> desugarSingleChild cursor
+  other                 -> error $ "found: " <> show other
 
 desugarBlock :: MonadError DesugarError m => T.CursorK 'CompoundStmt -> m Expr
 desugarBlock cursor = do
@@ -120,9 +163,7 @@ desugarBlockOne cursor = case cursorKind cursor of
     pure $ \_ -> expr
 
   IfStmt -> do
-    let children = cursorChildren cursor
-
-    case children of
+    case cursorChildren cursor of
       [cond, thn] -> do
         condition <- desugarExpr cond
         expr      <- desugarStmt thn

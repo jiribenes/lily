@@ -9,7 +9,9 @@
 module Core.Syntax where
 
 
-import           Type                           ( Name(..) )
+import           Type                           ( Name(..)
+                                                , Type
+                                                )
 import           ClangType
 import           Language.C.Clang.Cursor        ( cursorKind
                                                 , cursorSpelling
@@ -42,15 +44,23 @@ data Expr' t c = Var c Name
 
 data BuiltinExpr = BuiltinBinOp BinOp
                  | BuiltinUnOp UnOp
+                 | BuiltinMemberRef
+                 | BuiltinNew Type
+                 | BuiltinArraySubscript
                  | BuiltinUnit
+                 | BuiltinNullPtr
   deriving stock (Eq, Show, Ord)
 
 instance Pretty BuiltinExpr where
   pretty (BuiltinBinOp bop) =
-    "@builtin_binop_" <> (pretty $ drop (length ("BinOp" :: String)) (show bop))
+    "#builtin_binop_" <> (pretty $ drop (length ("BinOp" :: String)) (show bop))
   pretty (BuiltinUnOp uop) =
-    "@builtin_unop_" <> (pretty $ drop (length ("UnOp" :: String)) (show uop))
-  pretty BuiltinUnit = "@builtin_unit"
+    "#builtin_unop_" <> (pretty $ drop (length ("UnOp" :: String)) (show uop))
+  pretty BuiltinMemberRef      = "#builtin_memberref"
+  pretty (BuiltinNew typ) = "#builtin_new" <+> "@" <> PP.parens (pretty typ)
+  pretty BuiltinArraySubscript = "#builtin_arrsubscript"
+  pretty BuiltinUnit           = "#builtin_unit"
+  pretty BuiltinNullPtr        = "#builtin_nullptr"
 
 type Expr = Expr' (Maybe ClangType) Cursor
 type CursorExpr t = Expr' t Cursor
@@ -71,9 +81,10 @@ makePrisms ''TopLevel'
 type TopLevel = TopLevel' (Maybe ClangType) Cursor
 
 instance Pretty (TopLevel' t Cursor) where
-  pretty (TLLet          l  ) = pretty l
-  pretty (TLLetRecursive ls ) = "rec" <+> PP.align (PP.vsep $ pretty <$> ls)
-  pretty (TLLetNoBody _ name) = "# let" <+> pretty name
+  pretty (TLLet          l ) = pretty l
+  pretty (TLLetRecursive ls) = "rec" <+> PP.align (PP.vsep $ pretty <$> ls)
+  pretty (TLLetNoBody _ name) =
+    PP.enclose "(*" "*)" $ "predeclared:" <+> "let" <+> pretty name
 
 instance Pretty (Expr' t Cursor) where
   pretty (Var _ name       ) = pretty name
