@@ -58,9 +58,9 @@ prettyType :: S.Set Pred -> Type -> PP.Doc ann
 prettyType ps = \case
   TVar (TV n _) -> pretty n
   TCon (TC n _) -> pretty n
-  LinArrow a b -> prettyLeft ps a <+> "-o>" <+> prettyType ps b
-  UnArrow  a b -> prettyLeft ps a <+> "-●>" <+> prettyType ps b
-  Arrow    a b -> prettyLeft ps a <+> "->" <+> prettyType ps b
+  LinArrow a b  -> prettyLeft ps a <+> "-o>" <+> prettyType ps b
+  UnArrow  a b  -> prettyLeft ps a <+> "-●>" <+> prettyType ps b
+  Arrow    a b  -> prettyLeft ps a <+> "->" <+> prettyType ps b
   VariableArrow (TVar (TV n _)) a b ->
     prettyLeft ps a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
   TAp a@TAp{} b -> PP.parens (prettyType ps a) <+> prettyType ps b
@@ -200,8 +200,9 @@ instance Pretty Scheme where -- doesn't use the Pretty (Qual Type) instance to b
       ]
 
 -- | Substitution is a map from type variables to actual types
-newtype Subst = Subst (M.Map TVar Type) deriving stock (Eq, Ord, Show)
-                                        deriving newtype (Semigroup, Monoid)
+newtype Subst = Subst { unSubst :: M.Map TVar Type}
+  deriving stock (Eq, Ord, Show)
+  deriving newtype (Semigroup, Monoid)
 
 instance Pretty Subst where
   pretty (Subst m) = PP.list (prettyOne <$> M.toList m)
@@ -231,6 +232,7 @@ instance Substitutable Type where
 instance Substitutable Pred where
   apply s (IsIn x t) = IsIn x (apply s t)
 
+-- | Note: Cannot substitute for quantified variables!
 instance Substitutable Scheme where
   apply (Subst s) (Forall as qt) = Forall as (apply s' qt)
     where s' = Subst (foldr M.delete s as)

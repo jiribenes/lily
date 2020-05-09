@@ -29,6 +29,7 @@ import           MonadFresh
 import           Unify
 import           Core.Located
 import           Core.Syntax                    ( Expr )
+import           Debug.Trace                    ( traceShow )
 
 data Reason = BecauseExpr Expr
             | PairedAssumption Name Type
@@ -64,7 +65,16 @@ data Constraint = CEq Reason Type Type
                 | CImpInst Reason Type (S.Set TVar) Type
 --                | CCtor Reason Name Type -- new addition: `is constructor of`
                 | CIn Reason Name (NonEmpty Type)
-                deriving stock (Show, Eq)
+                deriving stock (Show)
+
+-- | Equality disregards the reason
+-- which is just for diagnostics/nice output
+instance Eq Constraint where
+  CEq _ t1 u1         == CEq _ t2 u2         = t1 == t2 && u1 == u2
+  CImpInst _ t1 m1 u1 == CImpInst _ t2 m2 u2 = t1 == t2 && m1 == m2 && u1 == u2
+  CExpInst _ t1 s1    == CExpInst _ t2 s2    = t1 == t2 && s1 == s2
+  CIn      _ n1 ts1   == CIn      _ n2 ts2   = n1 == n2 && ts1 == ts2
+  _                   == _                   = False
 
 instance Pretty Constraint where
   pretty (CEq      _ x y) = pretty x <+> "~" <+> pretty y
@@ -162,18 +172,36 @@ toPreds cs = [ IsIn n ts | CIn _ n ts <- cs ]
 fromPred :: Pred -> Constraint
 fromPred (IsIn n ts) = CIn FromPredicate n ts
 
-simplify :: ClassEnv -> Constraint -> [Constraint]
+-- | Takes a class environment, constraint being simplified,
+-- rest of constraints for context and returns new contexts being created from the simplified context
+simplify :: ClassEnv -> Constraint -> [Constraint] -> [Constraint]
 -- ^ this could also return Maybe and then use `catMaybes`
 -- TODO: we should verify that 'f' is indeed a function (there exists a 'CIn "Fun" [f]' in here
 -- TODO: check that these rules actually make sense!
-simplify _ (CGeq r other (f `TAp` _ `TAp` _)) = [CGeq (Simplified r) other f]
-simplify _ (CGeq r (f `TAp` _ `TAp` _) other) = [CGeq (Simplified r) f other]
-simplify env c@(CIn _ n ts) | IsIn n ts `S.member` env = []
-                            | otherwise                = [c]
-simplify _ c = [c]
+simplify env (CGeq r other (f `TAp` _ `TAp` _)) cs
+  | findConstraint env cs (CFun r f) = [CGeq (Simplified r) other f]
+simplify env (CGeq r (f `TAp` _ `TAp` _) other) cs
+  | findConstraint env cs (CFun r f) = [CGeq (Simplified r) f other]
+simplify env c@(CIn _ n ts) cs
+  | IsIn n ts `S.member` env = []
+  | otherwise                = simplifyGeq (findConstraint env cs) c
+simplify _ c _ = [c]
+
+findConstraint :: ClassEnv -> [Constraint] -> Constraint -> Bool
+findConstraint env (c : cs) x | c == x    = True
+                              | otherwise = findConstraint env cs x
+findConstraint env [] (CIn _ n ts) = IsIn n ts `S.member` env
+findConstraint _   _  _            = False
+
+-- | If we see constraint of type (Un t, t >= u),
+-- then we definitively throw the 'Un t' constraint away
+-- since we're not learning anything new!
+simplifyGeq :: (Constraint -> Bool) -> Constraint -> [Constraint]
+simplifyGeq p c@(CGeq r a _) | p (CUn r a) = traceShow ("deleting", pretty c) []
+simplifyGeq _ c                            = [c]
 
 simplifyMany :: ClassEnv -> [Constraint] -> [Constraint]
-simplifyMany e cs = cs >>= simplify e
+simplifyMany e cs = chooseOne cs >>= uncurry (simplify e)
 
 -- Solving:
 solve :: [Constraint] -> Solve (Subst, [Constraint])

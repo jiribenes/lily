@@ -30,6 +30,8 @@ import           Infer                          ( inferTop
                                                 , InferEnv
                                                 , typeEnv
                                                 )
+import           SimplifyType                   ( simplifyScheme )
+
 lily :: FilePath -> IO ()
 lily filepath = do
   tu <- createTranslationUnit filepath []
@@ -54,12 +56,15 @@ lily filepath = do
   let initialEnv = mempty
   finalEnv <- foldlM go initialEnv scc'
 
-  let finalInferEnv = finalEnv ^. typeEnv . to M.toList
+  -- flexing lens skills \o/
+  let prettyInferEnv =
+        finalEnv ^. typeEnv . to M.toList
+          & each . _2 %~ simplifyScheme
+          & each      %~ prettify
 
-  putDoc $ "let" <+> PP.align (PP.vcat $ prettify <$> finalInferEnv)
-  pure ()
+  putDoc $ "let" <+> PP.align (PP.vcat prettyInferEnv)
  where
-  prettify (name, typ) = PP.fill 5 (pretty name) <+> "::" <+> pretty typ
+  prettify (name, sch) = PP.fill 5 (pretty name) <+> "::" <+> pretty sch
 
   go :: InferEnv -> TopLevel -> IO InferEnv
   go env l@(TLLet nonRecursiveLet) =
