@@ -32,6 +32,7 @@ import           Core.Syntax
 import           Error
 import           Name
 import qualified Type.Assumption               as A
+import           Type.Constraint
 import           Type.Simplify
 import           Type.Solve
 import           Type.Type

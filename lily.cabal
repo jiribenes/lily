@@ -43,7 +43,7 @@ library
   other-modules:       Control.Monad.Fresh, 
                        Control.Lens.NonEmpty, 
                        Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, 
-                       Type.Infer, Type.Solve, Type.Unify, Type.Assumption, Type.Type, Type.Simplify, 
+                       Type.Infer, Type.Solve, Type.Unify, Type.Assumption, Type.Type, Type.Simplify, Type.Constraint, 
                        Error, 
                        Core.Desugar, Core.Syntax, Core.Located, 
                        Name
