@@ -82,15 +82,17 @@ instance Pretty BuiltinExpr where
 type Expr = Expr' (Maybe ClangType) Cursor
 type CursorExpr t = Expr' t Cursor
 
-data Let t c = Let c Name (Expr' t c)
+data Let' t c = Let c Name (Expr' t c)
   deriving stock (Eq, Ord, Show, Functor)
 
-instance Pretty (Let t Cursor) where
+type Let = Let' (Maybe ClangType) Cursor
+
+instance Pretty (Let' t Cursor) where
   pretty (Let _ name expr) =
     "let" <+> pretty name <+> "=" <+> PP.hang 4 (pretty expr)
 
-data TopLevel' t c = TLLet (Let t c)
-                   | TLLetRecursive (NonEmpty (Let t c))
+data TopLevel' t c = TLLet (Let' t c)
+                   | TLLetRecursive (NonEmpty (Let' t c))
                    | TLLetNoBody c Name
   deriving stock (Eq, Ord, Show, Functor)
 makePrisms ''TopLevel'
@@ -142,12 +144,12 @@ instance HasCursor (CursorExpr t) where
 instance HasCursor Cursor where
   cursorL = lens id const
 
-instance HasCursor (Let t Cursor) where
+instance HasCursor (Let' t Cursor) where
   cursorL = lens getter setter
    where
-    getter :: Let t Cursor -> Cursor
+    getter :: Let' t Cursor -> Cursor
     getter (Let c _ _) = c
-    setter :: Let t Cursor -> Cursor -> Let t Cursor
+    setter :: Let' t Cursor -> Cursor -> Let' t Cursor
     setter l newCursor = l $> newCursor
 
 instance HasCursor TopLevel where
@@ -167,9 +169,9 @@ unit c = Builtin c BuiltinUnit
 class HasName a where
   nameL :: Lens' a Name
 
-instance HasName (Let t c) where
+instance HasName (Let' t c) where
   nameL = lens getter setter
    where
-    getter :: Let t c -> Name
+    getter :: Let' t c -> Name
     getter (Let _ n _) = n
     setter (Let c _ e) n = Let c n e

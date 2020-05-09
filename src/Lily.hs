@@ -22,7 +22,7 @@ import           Debug.Trace                    ( traceM )
 
 import           Clang
 import           Core.Desugar                   ( desugarTopLevel )
-import           Core.Syntax                    ( TopLevel'(TLLet)
+import           Core.Syntax                    ( TopLevel'(..)
                                                 , nameL
                                                 , TopLevel
                                                 )
@@ -54,26 +54,18 @@ lily filepath = do
 
   putStrLn "----------------------"
   let initialEnv = mempty
-  finalEnv <- foldlM go initialEnv scc'
+  finalEnv <- case inferTop initialEnv scc' of
+    Left err -> do
+      putStrLn "======================"
+      putStrLn "Error happened!"
+      putStrLn "----------------------"
+      putDoc $ pretty err
+      putStrLn ""
+      putStrLn "======================"
+      pure mempty
+    Right newEnv -> pure newEnv
 
   let prettyInferEnv = finalEnv ^. typeEnv . to M.toList & each %~ prettify
 
   putDoc $ "let" <+> PP.align (PP.vcat prettyInferEnv)
- where
-  prettify (name, sch) = PP.fill 5 (pretty name) <+> "::" <+> pretty sch
-
-  go :: InferEnv -> TopLevel -> IO InferEnv
-  go env l@(TLLet nonRecursiveLet) =
-    case inferTop env [(nonRecursiveLet ^. nameL, l)] of
-      Left err -> do
-        putStrLn "======================"
-        putStrLn "Error happened!"
-        putStrLn "----------------------"
-        putDoc $ pretty err
-        putStrLn ""
-        putStrLn "======================"
-        pure env
-      Right newEnv -> pure newEnv
-  go env _ = do
-    traceM $ "TODO Ignoring a cyclic dependency for now!"
-    pure env -- ignore
+  where prettify (name, sch) = PP.fill 5 (pretty name) <+> "::" <+> pretty sch

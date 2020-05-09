@@ -21,7 +21,8 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
-import           Language.C.Clang.Cursor        ( CursorKind
+import           Language.C.Clang.Cursor        ( Cursor
+                                                , CursorKind
                                                 , cursorType
                                                 )
 
@@ -34,6 +35,12 @@ import           MonadFresh
 import           Solve
 import           Type
 import           SimplifyType
+import qualified Data.List.NonEmpty            as NE
+import           Data.Foldable                  ( for_
+                                                , Foldable(fold)
+                                                )
+import           Debug.Trace                    ( traceShowM )
+import           Data.Traversable               ( for )
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving stock (Eq, Show)
@@ -81,12 +88,13 @@ runInfer :: Infer a -> Either InferError a
 runInfer m =
   runExcept $ evalFreshT (runReaderT (unInfer m) S.empty) initialFreshState
 
--- | Infer a single type for an expression
-inferExpr :: InferEnv -> TopLevel -> Either InferError Scheme
-inferExpr env expr = case runInfer (inferType env expr) of
-  Left err -> Left err
-  Right (subst, preds, ty) ->
-    Right $ closeOver (mkSolveEnv ^. classEnv) (subst `apply` preds) (subst `apply` ty)
+-- | Infer a single type for a top-level
+inferTopLevel :: InferEnv -> TopLevel -> Either InferError (M.Map Name Scheme)
+inferTopLevel env tl = case runInfer (inferType env tl) of
+  Left  err -> Left err
+  Right m   -> Right $ M.map
+    (\(subst, preds, ty) -> closeOver (subst `apply` preds) (subst `apply` ty))
+    m
 
 -- | Take the accumulated constraints and run a solver over them
 runSolve :: [Constraint] -> Infer (Subst, [Constraint])
@@ -98,9 +106,9 @@ runSolve cs = do
       setFresh newFresh
       pure result
 
-inferType :: InferEnv -> TopLevel -> Infer (Subst, [Pred], Type)
+inferType :: InferEnv -> TopLevel -> Infer (M.Map Name (Subst, [Pred], Type))
 inferType env = \case
-  TLLet (Let _ cursor expr) -> do
+  TLLet (Let _ name expr) -> do
     (as, t, cs) <- infer expr
 
     let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
@@ -119,37 +127,65 @@ inferType env = \case
     -- solve all constraints together and get the resulting substitution
     (subst, unsolved) <- runSolve (cs <> cs')
 
-    {-
-    traceShowM
-      ( "unsolved:"
-      , pretty unsolved
-      , "subst:"
-      , pretty subst
-      , "type:"
-      , pretty t
-      , "subst-type"
-      , pretty $ subst `apply` t
-      , "preds:"
-      , pretty $ unsolved
-      , "subst-preds:"
-      , pretty $ subst `apply` unsolved
-      )
-      -}
-
-      -- Ideally, do a difference between these lists, but that's too hard for now
+    -- Ideally, do a difference between these lists, but that's too hard for now
+    -- TODO(jb): ^ I don't understand what I meant by this. Damn.
     unless (length unsolved == length (toPreds unsolved))
       $ throwError
       $ WrongConstraint unsolved
 
-    pure (subst, subst `apply` toPreds unsolved, subst `apply` t)
+    pure $ M.singleton
+      name
+      (subst, subst `apply` toPreds unsolved, subst `apply` t)
 
-  TLLetRecursive xs -> do
-    error "TODO: not implemented yet"
+  TLLetRecursive lets -> do
+    let nameAndExpr = lets <&> \(Let _ n e) -> (n, e)
+
+    tyVars <- traverse (const $ freshType StarKind) nameAndExpr
+    let nameAndTyVar = NE.zip nameAndExpr tyVars <&> \((n, e), tv) -> (n, tv)
+    let recursiveAssumptions = A.empty `A.extendMany` NE.toList nameAndTyVar
+
+    (ass, ts, css) <- unzip3 <$> (traverse infer $ nameAndExpr ^.. each . _2)
+    let as       = fold ass <> recursiveAssumptions
+
+    let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
+    let unboundsExceptRecursive =
+          unbounds `S.difference` S.fromList (nameAndExpr ^.. each . _1)
+
+    -- if we still have some free unknown variables which are 
+    -- in `as` but not in `env` by this point, we need to report them as an error
+    unless (S.null unboundsExceptRecursive) $ throwError $ UnboundVariables
+      (S.toList unbounds)
+
+    -- pair known assumptions to environment types
+    let cs' =
+          [ CExpInst (PairedAssumption x t) t s
+          | (x, s) <- env ^. typeEnv . to M.toList
+          , t      <- x `A.lookup` as
+          ]
+
+    -- solve all constraints together and get the resulting substitution
+    solverResults <- traverse (\cs -> runSolve $ cs <> cs') css
+
+    results       <- for (zip ts solverResults) $ \(t, (subst, unsolved)) -> do
+      let preds = subst `apply` toPreds unsolved
+      let t'    = subst `apply` t
+
+      --Ideally, do a difference between these lists, but that's too hard for now
+      unless (length unsolved == length (toPreds unsolved))
+        $ throwError
+        $ WrongConstraint unsolved
+
+      pure (subst, preds, t')
+
+    let nameAndResult = zip (nameAndExpr ^.. each . _1) results
+    pure $ M.fromList nameAndResult
   TLLetNoBody _ _ -> do
     error "This should never happen!"
 
-closeOver :: ClassEnv -> [Pred] -> Type -> Scheme
-closeOver env preds = normalize env . generalize (fromPred <$> preds) S.empty
+closeOver :: [Pred] -> Type -> Scheme
+closeOver preds =
+  normalize (mkSolveEnv ^. classEnv)
+    . generalize (fromPred BecauseCloseOver <$> preds) S.empty
 
 extendMonos :: TVar -> Infer a -> Infer a
 extendMonos x = local (S.insert x)
@@ -180,10 +216,13 @@ wkn x t as | x `A.notMember` as = [CUn BecauseWkn t]
 unrestricted :: A.Assumption Type -> [Constraint]
 unrestricted = fmap (CUn BecauseUn) . A.values
 
-freshFun :: Infer (Type, [Constraint])
-freshFun = do
+-- | Creates a fresh function with some juicy constraints!
+--
+-- Note: this requires expr only to have better diagnostics!
+freshFun :: Expr -> Infer (Type, [Constraint])
+freshFun expr = do
   f <- freshType arrowKind
-  pure (f, [fromPred $ PFun f])
+  pure (f, because (BecauseExpr expr) <$> [CFun BecauseFun f])
 
 -- | Take an expression and produce assumptions, result type and constraints to be solved
 infer :: Expr -> Infer (A.Assumption Type, Type, [Constraint])
@@ -213,7 +252,7 @@ infer expr = case expr of
     (tv, a)     <- freshTypeAndTVar StarKind
     (as, t, cs) <- a `extendMonos` infer e
 
-    (f, fPreds) <- freshFun -- this is the arrow kind
+    (f, fPreds) <- freshFun expr -- this is the arrow kind
     let as'   = as `A.remove` x
     -- TODO: this is a bit of a hack, it should be just 'as' but that produces wrong results. this should really be checked!
 
@@ -233,7 +272,7 @@ infer expr = case expr of
     (as2, t2, cs2) <- infer e2
     tv             <- freshType StarKind
 
-    (f, fPreds)    <- freshFun -- fresh arrow kind
+    (f, fPreds)    <- freshFun expr -- fresh arrow kind
     let preds = nub $ unrestricted $ as1 `A.intersection` as2
 
     pure
@@ -294,6 +333,21 @@ infer expr = case expr of
           )
 
       BinOpAdd -> do -- TODO: B O I L E R P L A T E
+        tv1      <- freshType StarKind
+        tv2      <- freshType StarKind
+        resultTv <- freshType StarKind
+
+        let f = makeFn3 tv1 tv2 resultTv
+
+        pure
+          ( A.empty
+          , f
+          , [ CEq (BecauseExpr expr) resultTv tv1
+            , CEq (BecauseExpr expr) tv1      tv2
+            ]
+          )
+
+      BinOpSub -> do -- TODO: B O I L E R P L A T E
         tv1      <- freshType StarKind
         tv2      <- freshType StarKind
         resultTv <- freshType StarKind
@@ -376,11 +430,11 @@ infer expr = case expr of
       pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
 
 -- | This is the top-level function that should be used for inferring a type of something
-inferTop :: InferEnv -> [(Name, TopLevel)] -> Either InferError InferEnv
-inferTop env []                  = Right env
-inferTop env ((name, expr) : xs) = case inferExpr env expr of
+inferTop :: InferEnv -> [TopLevel] -> Either InferError InferEnv
+inferTop env []         = Right env
+inferTop env (tl : tls) = case inferTopLevel env tl of
   Left  err -> Left err
-  Right ty  -> inferTop (env & typeEnv . at name ?~ ty) xs
+  Right m   -> inferTop (env & typeEnv <>~ m) tls
 
 -- | Attempt to convert the type scheme into a normal(ish) format  
 normalize :: ClassEnv -> Scheme -> Scheme
@@ -388,11 +442,11 @@ normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   (M.elems sub)
   ((properSub `apply` (normpreds (S.fromList preds))) :=> normtype body)
  where
-  Forall _ (preds :=> body) = simplifyScheme $ 
-    Forall origVars (normpreds (S.fromList origPreds) :=> origBody)
-  bodyFV         = ftv body
-  usefulVars     = S.toList $ S.fromList origVars `S.intersection` bodyFV
-  sub            = M.fromList $ (\(old@(TV _ k), n) -> (old, TV n k)) <$> zip
+  Forall _ (preds :=> body) = simplifyScheme
+    $ Forall origVars (normpreds (S.fromList origPreds) :=> origBody)
+  bodyFV     = ftv body
+  usefulVars = S.toList $ S.fromList origVars `S.intersection` bodyFV
+  sub        = M.fromList $ (\(old@(TV _ k), n) -> (old, TV n k)) <$> zip
     usefulVars
     (Name . ("t" <>) . Text.pack . show <$> [1 ..])
 

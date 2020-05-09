@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -36,11 +37,14 @@ data Reason = BecauseExpr Expr
             | Simplified Reason
             | Generalized Reason
             | Instantiated Reason
-            | FromPredicate
+            | BecauseCloseOver
+            | BecauseInstantiate
+            | BecauseFun
             | BecauseWkn
             | BecauseUn
             | BecauseLeq
             | FromClang Type Expr
+            | CombinedReason Reason Reason
             deriving stock (Eq, Show)
 
 instance Pretty Reason where
@@ -51,14 +55,21 @@ instance Pretty Reason where
   pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
   pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
   pretty (Instantiated r) = "from instantiation of:" <+> PP.indent 4 (pretty r)
-  pretty FromPredicate = "from a predicate"
-  pretty BecauseWkn = "from a [Wkn] rule"
-  pretty BecauseUn = "from a [Un] rule"
-  pretty BecauseLeq = "from a [Leq] rule"
+  pretty BecauseCloseOver     = "from closing over a type"
+  pretty BecauseInstantiate   = "from instantiation of a predicate"
+  pretty BecauseWkn           = "from a [Wkn] rule"
+  pretty BecauseUn            = "from a [Un] rule"
+  pretty BecauseLeq           = "from a [Leq] rule"
+  pretty BecauseFun           = "from a [Fun] rule"
   pretty (FromClang typ expr) = PP.align $ PP.sep
     [ "from Clang got type:" <+> pretty typ
     , "from expression at" <+> prettyLocation (loc expr)
     ]
+  pretty (CombinedReason first second) =
+    PP.align $ PP.sep [pretty first, pretty second]
+
+because :: Reason -> Constraint -> Constraint
+because r' c = c & reasonL %~ (\r -> CombinedReason r r')
 
 data Constraint = CEq Reason Type Type
                 | CExpInst Reason Type Scheme
@@ -66,6 +77,21 @@ data Constraint = CEq Reason Type Type
 --                | CCtor Reason Name Type -- new addition: `is constructor of`
                 | CIn Reason Name (NonEmpty Type)
                 deriving stock (Show)
+
+reasonL :: Lens' Constraint Reason
+reasonL = lens getter (flip setter)
+ where
+  getter = \case
+    CEq      r _ _   -> r
+    CExpInst r _ _   -> r
+    CImpInst r _ _ _ -> r
+    CIn r _ _        -> r
+  setter :: Reason -> Constraint -> Constraint
+  setter r' = \case
+    CEq      _ a b         -> CEq r' a b
+    CExpInst _ t s         -> CExpInst r' t s
+    CImpInst _ t1 monos t2 -> CImpInst r' t1 monos t2
+    CIn _ n ts             -> CIn r' n ts
 
 -- | Equality disregards the reason
 -- which is just for diagnostics/nice output
@@ -169,8 +195,8 @@ pattern CGeq r x y <- CIn r "Geq" [x, y] where CGeq r x y = CIn r "Geq" [x, y]
 
 toPreds :: [Constraint] -> [Pred]
 toPreds cs = [ IsIn n ts | CIn _ n ts <- cs ]
-fromPred :: Pred -> Constraint
-fromPred (IsIn n ts) = CIn FromPredicate n ts
+fromPred :: Reason -> Pred -> Constraint
+fromPred r (IsIn n ts) = CIn r n ts
 
 -- | Takes a class environment, constraint being simplified,
 -- rest of constraints for context and returns new contexts being created from the simplified context
@@ -267,7 +293,8 @@ instantiate (Forall xs qt) = do
   xs' <- traverse (\(TV _ k) -> freshType k) xs
   let sub         = Subst $ M.fromList $ zip xs xs'
       preds :=> t = sub `apply` qt
-  pure (t, fromPred <$> preds)
+  let reason = BecauseInstantiate
+  pure (t, fromPred BecauseInstantiate <$> preds)
 
 -- TODO: This function is a bit incorrect, see below
 generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
