@@ -4,7 +4,16 @@
 {-# LANGUAGE OverloadedLists #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module Type.Constraint where
+module Type.Constraint
+  ( Reason(..)
+  , because
+  , Constraint(..)
+  , reasonL
+  , pattern CFun
+  , pattern CUn
+  , pattern CGeq
+  )
+where
 
 import           Control.Lens
 import           Data.List.NonEmpty             ( NonEmpty )
@@ -39,7 +48,7 @@ instance Pretty Reason where
   pretty (BecauseExpr expr) =
     "from expression at" <+> prettyLocation (loc expr)
   pretty (PairedAssumption n t) =
-    "from assumption:" <+> pretty n <+> "::" <+> pretty t
+    "from generalizing an assumption that:" <+> pretty n <+> "::" <+> pretty t
   pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
   pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
   pretty (Instantiated r) = "from instantiation of:" <+> PP.indent 4 (pretty r)
