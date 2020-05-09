@@ -384,24 +384,19 @@ inferTop env ((name, expr) : xs) = case inferExpr env expr of
 
 -- | Attempt to convert the type scheme into a normal(ish) format  
 normalize :: ClassEnv -> Scheme -> Scheme
-normalize env f = Forall
+normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   (M.elems sub)
-  ((properSub `apply` normpreds (S.fromList preds)) :=> normtype body)
+  ((properSub `apply` (normpreds (S.fromList preds))) :=> normtype body)
  where
-  Forall origVars qt = simplifyScheme f
-  preds :=> body = qt
-  bodyFV         = S.fromList $ fv body
+  Forall _ (preds :=> body) = simplifyScheme $ 
+    Forall origVars (normpreds (S.fromList origPreds) :=> origBody)
+  bodyFV         = ftv body
   usefulVars     = S.toList $ S.fromList origVars `S.intersection` bodyFV
   sub            = M.fromList $ (\(old@(TV _ k), n) -> (old, TV n k)) <$> zip
     usefulVars
     (Name . ("t" <>) . Text.pack . show <$> [1 ..])
 
   properSub = Subst $ M.map TVar sub
-
-  fv :: Type -> [TVar]
-  fv (TVar tv) = [tv]
-  fv (TAp a b) = fv a <> fv b
-  fv (TCon _ ) = []
 
   normtype :: Type -> Type
   normtype (TAp a b)  = normtype a `TAp` normtype b
@@ -411,4 +406,4 @@ normalize env f = Forall
     Nothing -> error "tv not in signature"
 
   normpreds :: S.Set Pred -> [Pred]
-  normpreds preds = S.toList $ S.difference preds env
+  normpreds ps = S.toList $ S.difference ps env

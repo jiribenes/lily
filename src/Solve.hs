@@ -198,6 +198,7 @@ findConstraint _   _  _            = False
 -- since we're not learning anything new!
 simplifyGeq :: (Constraint -> Bool) -> Constraint -> [Constraint]
 simplifyGeq p c@(CGeq r a _) | p (CUn r a) = traceShow ("deleting", pretty c) []
+simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow = traceShow ("deleting", pretty c) []
 simplifyGeq _ c                            = [c]
 
 simplifyMany :: ClassEnv -> [Constraint] -> [Constraint]
