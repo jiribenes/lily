@@ -193,7 +193,7 @@ data Scheme = Forall [TVar] (Qual Type) deriving stock (Eq, Show, Ord)
 instance Pretty Scheme where -- doesn't use the Pretty (Qual Type) instance to be prettier!
   pretty (Forall []  qt        ) = pretty qt
   pretty (Forall tvs ([] :=> t)) = PP.align
-    (PP.sep ["forall" <+> PP.align (PP.sep (pretty <$> tvs)), "=>" <+> pretty t]
+    (PP.sep ["forall" <+> PP.align (PP.sep (pretty <$> tvs)), "." <+> pretty t]
     )
   pretty (Forall tvs (preds :=> t)) = PP.align
     (PP.sep
