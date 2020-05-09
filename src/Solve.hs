@@ -52,9 +52,9 @@ instance Pretty Reason where
     "from expression at" <+> prettyLocation (loc expr)
   pretty (PairedAssumption n t) =
     "from assumption:" <+> pretty n <+> "::" <+> pretty t
-  pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
-  pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
-  pretty (Instantiated r) = "from instantiation of:" <+> PP.indent 4 (pretty r)
+  pretty (Simplified r)       = "from simplification of:" <+> PP.indent 4 (pretty r)
+  pretty (Generalized r)      = "from generalization of:" <+> PP.indent 4 (pretty r)
+  pretty (Instantiated r)     = "from instantiation of:" <+> PP.indent 4 (pretty r)
   pretty BecauseCloseOver     = "from closing over a type"
   pretty BecauseInstantiate   = "from instantiation of a predicate"
   pretty BecauseWkn           = "from a [Wkn] rule"
@@ -63,7 +63,7 @@ instance Pretty Reason where
   pretty BecauseFun           = "from a [Fun] rule"
   pretty (FromClang typ expr) = PP.align $ PP.sep
     [ "from Clang got type:" <+> pretty typ
-    , "from expression at" <+> prettyLocation (loc expr)
+    , PP.indent 4 $ "of expression at" <+> prettyLocation (loc expr)
     ]
   pretty (CombinedReason first second) =
     PP.align $ PP.sep [pretty first, pretty second]
