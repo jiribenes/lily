@@ -293,7 +293,7 @@ instantiate (Forall xs qt) = do
   xs' <- traverse (\(TV _ k) -> freshType k) xs
   let sub         = Subst $ M.fromList $ zip xs xs'
       preds :=> t = sub `apply` qt
-  let reason = BecauseInstantiate
+
   pure (t, fromPred BecauseInstantiate <$> preds)
 
 -- TODO: This function is a bit incorrect, see below

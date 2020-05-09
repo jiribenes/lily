@@ -13,7 +13,9 @@ module Infer where
 import           Control.Lens
 import           Control.Monad.Except
 import           Control.Monad.Reader
+import           Data.Foldable                  ( Foldable(fold) )
 import           Data.List                      ( nub )
+import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
 import qualified Data.Set                      as S
 import qualified Data.Text                     as Text
@@ -21,8 +23,8 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
-import           Language.C.Clang.Cursor        ( Cursor
-                                                , CursorKind
+import           Data.Traversable               ( for )
+import           Language.C.Clang.Cursor        ( CursorKind
                                                 , cursorType
                                                 )
 
@@ -32,15 +34,10 @@ import           ClangType
 import           Core.Syntax
 import           Error
 import           MonadFresh
+import           SimplifyType
 import           Solve
 import           Type
-import           SimplifyType
-import qualified Data.List.NonEmpty            as NE
-import           Data.Foldable                  ( for_
-                                                , Foldable(fold)
-                                                )
-import           Debug.Trace                    ( traceShowM )
-import           Data.Traversable               ( for )
+
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving stock (Eq, Show)
@@ -179,8 +176,7 @@ inferType env = \case
 
     let nameAndResult = zip (nameAndExpr ^.. each . _1) results
     pure $ M.fromList nameAndResult
-  TLLetNoBody _ _ -> do
-    error "This should never happen!"
+  TLLetNoBody _ _ -> throwError Weirdness
 
 closeOver :: [Pred] -> Type -> Scheme
 closeOver preds =
@@ -440,7 +436,7 @@ inferTop env (tl : tls) = case inferTopLevel env tl of
 normalize :: ClassEnv -> Scheme -> Scheme
 normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   (M.elems sub)
-  ((properSub `apply` (normpreds (S.fromList preds))) :=> normtype body)
+  ((properSub `apply` normpreds (S.fromList preds)) :=> normtype body)
  where
   Forall _ (preds :=> body) = simplifyScheme
     $ Forall origVars (normpreds (S.fromList origPreds) :=> origBody)

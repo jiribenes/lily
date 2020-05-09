@@ -1,3 +1,4 @@
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
@@ -52,7 +53,7 @@ _neHead f (a NE.:| as) = (NE.:| as) <$> f a
 
 initialFreshState :: FreshState Name
 initialFreshState = FreshState
-  { unFresh = Name . ("t" <>) . T.pack . show <$> NE.iterate (+ 1) 0
+  { unFresh = Name . ("t" <>) . T.pack . show @Int <$> NE.iterate (+ 1) 0
   }
 
 -- | Monad transformer for `FreshState`
