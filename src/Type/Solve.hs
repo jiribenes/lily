@@ -6,7 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-module Solve where
+module Type.Solve where
 
 import           Control.Lens
 import           Control.Monad.Except
@@ -25,10 +25,10 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 
-import           Type
+import           Type.Type
 import           Name
 import           Control.Monad.Fresh
-import           Unify
+import           Type.Unify
 import           Core.Located
 import           Core.Syntax                    ( Expr )
 import           Debug.Trace                    ( traceShow )
@@ -53,9 +53,9 @@ instance Pretty Reason where
     "from expression at" <+> prettyLocation (loc expr)
   pretty (PairedAssumption n t) =
     "from assumption:" <+> pretty n <+> "::" <+> pretty t
-  pretty (Simplified r)       = "from simplification of:" <+> PP.indent 4 (pretty r)
-  pretty (Generalized r)      = "from generalization of:" <+> PP.indent 4 (pretty r)
-  pretty (Instantiated r)     = "from instantiation of:" <+> PP.indent 4 (pretty r)
+  pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
+  pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
+  pretty (Instantiated r) = "from instantiation of:" <+> PP.indent 4 (pretty r)
   pretty BecauseCloseOver     = "from closing over a type"
   pretty BecauseInstantiate   = "from instantiation of a predicate"
   pretty BecauseWkn           = "from a [Wkn] rule"
@@ -225,8 +225,9 @@ findConstraint _   _  _            = False
 -- since we're not learning anything new!
 simplifyGeq :: (Constraint -> Bool) -> Constraint -> [Constraint]
 simplifyGeq p c@(CGeq r a _) | p (CUn r a) = traceShow ("deleting", pretty c) []
-simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow = traceShow ("deleting", pretty c) []
-simplifyGeq _ c                            = [c]
+simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow =
+  traceShow ("deleting", pretty c) []
+simplifyGeq _ c = [c]
 
 simplifyMany :: ClassEnv -> [Constraint] -> [Constraint]
 simplifyMany e cs = chooseOne cs >>= uncurry (simplify e)

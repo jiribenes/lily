@@ -19,10 +19,10 @@ import           Data.Text.Prettyprint.Doc.Render.Text
                                                 ( putDoc )
 
 import           Clang
-import           Clang.Function
 import           Clang.AST
+import           Clang.Function
 import           Core.Desugar                   ( desugarTopLevel )
-import           Infer                          ( inferTop
+import           Type.Infer                     ( inferTop
                                                 , typeEnv
                                                 )
 

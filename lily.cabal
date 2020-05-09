@@ -40,7 +40,13 @@ library
   import:              common-options
   hs-source-dirs:      src
   exposed-modules:     Lily
-  other-modules:       Control.Monad.Fresh, Control.Lens.NonEmpty, Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, Infer, Solve, Unify, Assumption, Type, Error, Core.Desugar, Core.Syntax, Core.Located, SimplifyType, Name
+  other-modules:       Control.Monad.Fresh, 
+                       Control.Lens.NonEmpty, 
+                       Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, 
+                       Type.Infer, Type.Solve, Type.Unify, Type.Assumption, Type.Type, Type.Simplify, 
+                       Error, 
+                       Core.Desugar, Core.Syntax, Core.Located, 
+                       Name
 
 executable lily
   import:              common-options

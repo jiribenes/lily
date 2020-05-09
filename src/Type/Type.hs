@@ -1,30 +1,25 @@
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE OverloadedLists #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms #-}
 {-# LANGUAGE ViewPatterns #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE OverloadedLists #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE FlexibleInstances #-}
 
-module Type where
+module Type.Type where
 
-import           Data.ByteString.Char8          ( ByteString )
 import           Data.List.NonEmpty             ( NonEmpty )
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( isJust )
 import qualified Data.Set                      as S
-import           Data.String                    ( IsString )
-import           Data.Text                      ( Text )
-import qualified Data.Text                     as T
-import           Data.Text.Encoding             ( decodeUtf8 )
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 
-import Name
+import           Name
 
 data TVar = TV Name Kind deriving stock (Show, Eq, Ord)
 

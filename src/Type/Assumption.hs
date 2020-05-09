@@ -1,6 +1,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DerivingStrategies #-}
-module Assumption
+
+module Type.Assumption
   ( Assumption
   , empty
   , singleton
@@ -16,7 +17,7 @@ module Assumption
   , intersectMany
   , remove
   , removeMany
-  , Assumption.lookup
+  , Type.Assumption.lookup
   )
 where
 

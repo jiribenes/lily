@@ -2,17 +2,17 @@
 -- * remove satisfied predicates (somehow?)
 -- * replace 'normalize' in Infer with this
 -- * put fresh variables - ideally 'f', 'g', 'h' for functions, 'a', 'b', 'c' for other types
-module SimplifyType
+module Type.Simplify
   ( simplifyScheme
   )
 where
 
-import           Type
 import qualified Data.Set                      as S
 import qualified Data.Map                      as M
 import           Data.List                      ( (\\)
                                                 , foldl'
                                                 )
+import           Type.Type
 
 simplifyScheme :: Scheme -> Scheme
 simplifyScheme (Forall tvs qt@(preds :=> _)) =

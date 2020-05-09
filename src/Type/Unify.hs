@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Unify where
+module Type.Unify where
 
 import           Control.Monad.Except
 import qualified Data.Map                      as M
@@ -12,7 +12,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 
-import           Type
+import           Type.Type
 import           Name
 
 data UnificationError = InfiniteType TVar Type
@@ -26,9 +26,11 @@ instance Pretty UnificationError where
   pretty (UnificationFail a b) = PP.align
     (PP.vsep -- TODO: kind is mostly for debug purposes (?)
       [ "Cannot unify:"
-      , PP.indent 4 $ PP.hsep [pretty a, PP.parens $ "of kind:" <+> pretty (typeKind a)]
+      , PP.indent 4
+        $ PP.hsep [pretty a, PP.parens $ "of kind:" <+> pretty (typeKind a)]
       , "with:"
-      , PP.indent 4 $ PP.hsep [pretty b, PP.parens $ "of kind:" <+> pretty (typeKind b)]
+      , PP.indent 4
+        $ PP.hsep [pretty b, PP.parens $ "of kind:" <+> pretty (typeKind b)]
       ]
     )
   pretty (KindMismatch a b) = PP.align

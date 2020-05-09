@@ -8,7 +8,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NamedFieldPuns #-}
 
-module Infer where
+module Type.Infer where
 
 import           Control.Lens
 import           Control.Monad.Except
@@ -24,19 +24,17 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import           Data.Traversable               ( for )
-import           Language.C.Clang.Cursor        ( CursorKind
-                                                , cursorType
-                                                )
+import           Language.C.Clang.Cursor        ( CursorKind )
 
-import qualified Assumption                    as A
 import           Clang.OpParser
 import           Control.Monad.Fresh
 import           Core.Syntax
 import           Error
-import           SimplifyType
-import           Solve
-import           Type
 import           Name
+import qualified Type.Assumption               as A
+import           Type.Simplify
+import           Type.Solve
+import           Type.Type
 
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }

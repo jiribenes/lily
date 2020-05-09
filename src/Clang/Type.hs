@@ -13,7 +13,7 @@ import           Language.C.Clang.Type          ( typeCanonicalType
                                                 )
 import qualified Language.C.Clang.Type         as ClangType
 
-import           Type
+import           Type.Type
 
 type ClangType = ClangType.Type
 

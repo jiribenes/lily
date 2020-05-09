@@ -25,7 +25,7 @@ import           Language.C.Clang.Cursor        ( Cursor
 
 import           Clang.OpParser
 import           Name
-import           Type                           ( Type )
+import           Type.Type                      ( Type )
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
@@ -105,10 +105,10 @@ instance Pretty t => Pretty (TopLevel' t Cursor) where
     PP.enclose "(*" "*)" $ "predeclared:" <+> "let" <+> pretty name
 
 instance Pretty t => Pretty (Expr' t Cursor) where
-  pretty (Var _ name       ) = pretty name
-  pretty (App _ e1 e2@App{}) = pretty e1 <+> PP.parens (pretty e2)
-  pretty (App _ e1 e2      ) = pretty e1 <+> pretty e2
-  pretty (Lam _ name expr) = "\\" <> pretty name <+> "->" <+> pretty expr
+  pretty (Var _ name         ) = pretty name
+  pretty (App _ e1   e2@App{}) = pretty e1 <+> PP.parens (pretty e2)
+  pretty (App _ e1   e2      ) = pretty e1 <+> pretty e2
+  pretty (Lam _ name expr    ) = "\\" <> pretty name <+> "->" <+> pretty expr
   pretty (LetIn _ name e1 e2) =
     "let" <+> pretty name <+> "=" <+> pretty e1 <+> "in" <+> pretty e2
   pretty (If _ cond thn els) = "if" <+> PP.align
@@ -133,7 +133,7 @@ instance HasCursor (CursorExpr t) where
     getter = \case
       Var c _       -> c
       App c _ _     -> c
-      Lam   c _ _   -> c
+      Lam c _ _     -> c
       LetIn c _ _ _ -> c
       Literal c _   -> c
       If c _ _ _    -> c
