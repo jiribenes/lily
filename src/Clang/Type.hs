@@ -22,9 +22,9 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
   ClangType.Invalid   -> error "invalid clang type"
   ClangType.Unexposed -> traceShow
     (  "Found type: "
-    <> (BS.unpack $ typeSpelling clangType)
+    <> BS.unpack (typeSpelling clangType)
     <> ", canonically:"
-    <> (BS.unpack $ typeSpelling canonicalClangType)
+    <> BS.unpack (typeSpelling canonicalClangType)
     <> ", but returning Nothing for now! TODO"
     )
     Nothing -- TODO: this generally means that the type is a bit involved and you should just use a new type constructor with the given spelling!

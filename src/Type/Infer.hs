@@ -139,7 +139,7 @@ inferType env = \case
     let nameAndTyVar = NE.zip nameAndExpr tyVars <&> \((n, e), tv) -> (n, tv)
     let recursiveAssumptions = A.empty `A.extendMany` NE.toList nameAndTyVar
 
-    (ass, ts, css) <- unzip3 <$> (traverse infer $ nameAndExpr ^.. each . _2)
+    (ass, ts, css) <- unzip3 <$> traverse infer (nameAndExpr ^.. each . _2)
     let as       = fold ass <> recursiveAssumptions
 
     let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)

@@ -82,17 +82,14 @@ calledFunctions = referencedCalls . functionDecls
  where
   referencedCalls :: Fold Cursor Cursor
   referencedCalls =
-    cursorDescendantsF
-      . folding (T.matchKind @ 'CallExpr)
-      -- . filtered ({-isFromMainFile . -} rangeStart . T.cursorExtent)
-      . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
+    cursorDescendantsF . folding (T.matchKind @ 'CallExpr) . folding
+      (fmap cursorCanonical . cursorReferenced . T.withoutKind)
 
   functionDecls :: Fold Cursor SomeFunctionCursor
   functionDecls = folding toSomeFunction
 
 allFunctions :: Fold Cursor SomeFunctionCursor
 allFunctions = cursorDescendantsF . folding toSomeFunction
-   -- . filtered ({-isFromMainFile . -} rangeStart . T.cursorExtent)
 
 getFunctionBody
   :: SomeFunctionCursor -> TranslationUnit -> Maybe SomeFunctionCursor
@@ -101,10 +98,9 @@ getFunctionBody def tu = translationUnitCursor tu ^? functionBodyF
   functionBodyF :: Fold Cursor SomeFunctionCursor
   functionBodyF = allFunctions . filtered
     (\x ->
-      (  cursorCanonical (unwrapSomeFunction x)
-      == (unwrapSomeFunction def)
-      && functionHasBody x
-      )
+      cursorCanonical (unwrapSomeFunction x)
+        == unwrapSomeFunction def
+        && functionHasBody x
     )
 
 type FunctionGraphNode = (SomeFunctionCursor, ByteString, [ByteString])
@@ -116,13 +112,13 @@ normalize = fmap representGroup . groupByUSR
  where
   representGroup xs =
     ( fnCursor
-    , cursorUSR $ unwrapSomeFunction fnCursor
+    , fnCursor & unwrapSomeFunction & cursorUSR
     , xs ^.. traverse . _3 . traverse -- gather all `_3` in a single list
     )
    where
     fnCursor :: SomeFunctionCursor
     fnCursor = xs ^?! _head . _1 -- this is safe because when we get here in the actual program, 
-                                       -- we already know that we have at least one cursor :)
+                                 -- we already know that we have at least one cursor :)
 
   groupByUSR = groupBy ((==) `on` view _2) . sortOn (view _2)
 
@@ -136,7 +132,7 @@ recursiveComponents tu =
  where
   intoGraphNode :: SomeFunctionCursor -> FunctionGraphNode
   intoGraphNode fnDecl =
-    ( fromJust $ getFunctionBody fnDecl tu
+    ( getFunctionBody fnDecl tu & fromJust
     , fnDecl & someUSR
     , (fnDecl & unwrapSomeFunction) ^.. calledFunctions . to someUSR
     )
