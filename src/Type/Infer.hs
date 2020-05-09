@@ -25,6 +25,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 )
 import           Data.Traversable               ( for )
 import           Language.C.Clang.Cursor        ( CursorKind )
+import           Data.Maybe                     ( catMaybes )
 
 import           Clang.OpParser
 import           Control.Monad.Fresh
@@ -36,6 +37,7 @@ import           Type.Constraint
 import           Type.Simplify
 import           Type.Solve
 import           Type.Type
+
 
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
@@ -121,7 +123,7 @@ inferType env = \case
           ]
 
     -- solve all constraints together and get the resulting substitution
-    (subst, unsolved) <- runSolve (cs <> cs')
+    (subst, unsolved) <- runSolve $ cs <> cs'
 
     -- Ideally, do a difference between these lists, but that's too hard for now
     -- TODO(jb): ^ I don't understand what I meant by this. Damn.
@@ -134,18 +136,16 @@ inferType env = \case
       (subst, subst `apply` toPreds unsolved, subst `apply` t)
 
   TLLetRecursive lets -> do
-    let nameAndExpr = lets <&> \(Let _ n e) -> (n, e)
+    let (names, exprs) = unzip $ NE.toList $ lets <&> \(Let _ n e) -> (n, e)
 
-    tyVars <- traverse (const $ freshType StarKind) nameAndExpr
-    let nameAndTyVar = NE.zip nameAndExpr tyVars <&> \((n, e), tv) -> (n, tv)
-    let recursiveAssumptions = A.empty `A.extendMany` NE.toList nameAndTyVar
+    tyVars <- traverse (const $ freshType StarKind) $ zip names exprs
+    let recursiveAssumptions = A.empty `A.extendMany` zip names tyVars
 
-    (ass, ts, css) <- unzip3 <$> traverse infer (nameAndExpr ^.. each . _2)
-    let as       = fold ass <> recursiveAssumptions
+    (ass, ts, css) <- unzip3 <$> traverse infer exprs
+    let as = fold ass <> recursiveAssumptions
 
     let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
-    let unboundsExceptRecursive =
-          unbounds `S.difference` S.fromList (nameAndExpr ^.. each . _1)
+    let unboundsExceptRecursive = unbounds `S.difference` S.fromList names
 
     -- if we still have some free unknown variables which are 
     -- in `as` but not in `env` by this point, we need to report them as an error
@@ -160,9 +160,17 @@ inferType env = \case
           ]
 
     -- solve all constraints together and get the resulting substitution
-    solverResults <- traverse (\cs -> runSolve $ cs <> cs') css
+    solverResults <- do
+      let relevantConstraints cs = cs <> cs'
+      let prettify x =
+            show (x & pretty, x ^. reasonL & pretty, ts ^?! _head & pretty)
+      let go cs = runSolve $ -- trace
+            --(unlines $ prettify <$> relevantConstraints cs)
+            relevantConstraints
+            cs
+      traverse go css
 
-    results       <- for (zip ts solverResults) $ \(t, (subst, unsolved)) -> do
+    results <- for (zip ts solverResults) $ \(t, (subst, unsolved)) -> do
       let preds = subst `apply` toPreds unsolved
       let t'    = subst `apply` t
 
@@ -171,9 +179,10 @@ inferType env = \case
         $ throwError
         $ WrongConstraint unsolved
 
-      pure (subst, preds, t')
+      pure
+        $ {-traceShow (pretty subst, pretty preds, pretty t')-} (subst, preds, t')
 
-    let nameAndResult = zip (nameAndExpr ^.. each . _1) results
+    let nameAndResult = zip names results
     pure $ M.fromList nameAndResult
   TLLetNoBody _ _ -> throwError Weirdness
 
@@ -198,7 +207,7 @@ makeFn3 a b c = typeArrow `TAp` a `TAp` makeFn2 b c
 makeArrow :: Type -> Type -> Type -> Type
 makeArrow x f y = f `TAp` x `TAp` y
 
--- | Adds a 'Leq t u' constraint for every type 'u' in the assumptions
+-- | Adds a 'Geq u t' constraint for every type 'u' in the assumptions
 leq :: Type -> A.Assumption Type -> [Constraint]
 leq t = fmap (\x -> CGeq BecauseLeq x t) . A.values
 
@@ -251,10 +260,10 @@ infer expr = case expr of
     let as'   = as `A.remove` x
     -- TODO: this is a bit of a hack, it should be just 'as' but that produces wrong results. this should really be checked!
 
-    let preds = nub $ leq f as' <> wkn x tv as
+    let preds = because (BecauseExpr expr) <$> nub (leq f as' <> wkn x tv as)
 
     pure
-      ( as `A.remove` x
+      ( as'
       , makeArrow tv f t
       , cs
       <> [ CEq (BecauseExpr e) t' tv | t' <- A.lookup x as ]
@@ -435,15 +444,16 @@ inferTop env (tl : tls) = case inferTopLevel env tl of
 normalize :: ClassEnv -> Scheme -> Scheme
 normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   (M.elems sub)
-  ((properSub `apply` normpreds (S.fromList preds)) :=> normtype body)
+  (   (properSub `apply` normpreds (S.fromList $ filter isPredRelevant preds))
+  :=> normtype body
+  )
  where
   Forall _ (preds :=> body) = simplifyScheme
     $ Forall origVars (normpreds (S.fromList origPreds) :=> origBody)
-  bodyFV     = ftv body
-  usefulVars = S.toList $ S.fromList origVars `S.intersection` bodyFV
+  usefulVars = S.toList $ S.fromList origVars `S.intersection` ftv body
   sub        = M.fromList $ (\(old@(TV _ k), n) -> (old, TV n k)) <$> zip
     usefulVars
-    (Name . ("t" <>) . Text.pack . show <$> [1 ..])
+    (Name . ("t" <>) . Text.pack . show @Int <$> [1 ..])
 
   properSub = Subst $ M.map TVar sub
 
@@ -456,3 +466,14 @@ normalize env (Forall origVars (origPreds :=> origBody)) = Forall
 
   normpreds :: S.Set Pred -> [Pred]
   normpreds ps = S.toList $ S.difference ps env
+
+  isPredRelevant :: Pred -> Bool
+  isPredRelevant (IsIn _ ts) = null (filter (\t -> t `M.notMember` sub) tyVars) -- check if we haven't lost _any_!
+    where tyVars = filterTVars . NE.toList $ ts
+
+  toTVar :: Type -> Maybe TVar
+  toTVar (TVar t) = Just t
+  toTVar _        = Nothing
+
+  filterTVars :: [Type] -> [TVar]
+  filterTVars = catMaybes . fmap toTVar
