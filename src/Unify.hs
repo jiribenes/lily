@@ -13,6 +13,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 )
 
 import           Type
+import           Name
 
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type

@@ -28,9 +28,7 @@ import           Clang.OpParser
 import           Core.Located
 import           Core.Syntax
 import           Error
-import           Type                           ( Name(..)
-                                                , nameFromBS
-                                                )
+import           Name                           ( Name(Name), nameFromBS )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation

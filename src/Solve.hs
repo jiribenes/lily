@@ -26,7 +26,8 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 )
 
 import           Type
-import           MonadFresh
+import           Name
+import           Control.Monad.Fresh
 import           Unify
 import           Core.Located
 import           Core.Syntax                    ( Expr )

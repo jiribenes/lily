@@ -23,11 +23,9 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 , cursorSpelling
                                                 )
 
-import           Clang.Type
 import           Clang.OpParser
-import           Type                           ( Name(..)
-                                                , Type
-                                                )
+import           Name
+import           Type                           ( Type )
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 

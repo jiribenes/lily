@@ -30,12 +30,13 @@ import           Language.C.Clang.Cursor        ( CursorKind
 
 import qualified Assumption                    as A
 import           Clang.OpParser
+import           Control.Monad.Fresh
 import           Core.Syntax
 import           Error
-import           MonadFresh
 import           SimplifyType
 import           Solve
 import           Type
+import           Name
 
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }

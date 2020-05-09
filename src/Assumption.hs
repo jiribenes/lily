@@ -24,7 +24,7 @@ import           Data.Coerce
 import qualified Data.Set                      as S
 import           Data.List                      ( foldl' )
 
-import           Type
+import           Name
 
 -- | Multimap of assumptions 
 newtype Assumption t = Assumption { unAssumption :: [(Name, t)] }

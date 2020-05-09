@@ -24,14 +24,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 
-newtype Name = Name { unName :: Text }
-  deriving newtype (Eq, Ord, IsString, Pretty)
-
-instance Show Name where
-  show = T.unpack . unName
-
-nameFromBS :: ByteString -> Name
-nameFromBS = Name . decodeUtf8
+import Name
 
 data TVar = TV Name Kind deriving stock (Show, Eq, Ord)
 

@@ -11,7 +11,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE GADTs #-} -- used for (~) constraint only
 
-module MonadFresh
+module Control.Monad.Fresh
   ( FreshState
   , initialFreshState
   , MonadFresh
@@ -37,19 +37,15 @@ import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
 import           Data.Kind                      ( Type )
 import qualified Data.List.NonEmpty            as NE
+import qualified Control.Lens.NonEmpty         as NE
 import qualified Data.Text                     as T
 
-import           Type                           ( Name(..) )
+import           Name                           ( Name(Name) )
 
 newtype FreshState n = FreshState { unFresh :: NE.NonEmpty n }
 
 -- makes a lens `_fresh` for getting the contents of `FreshState`
 makeLensesFor [("unFresh", "_fresh")] ''FreshState
-
--- | Equivalent to `_head` but for `NonEmpty`
--- | It's an actual lawful `Lens` instead of a `Traversal`!
-_neHead :: Lens' (NE.NonEmpty a) a
-_neHead f (a NE.:| as) = (NE.:| as) <$> f a
 
 initialFreshState :: FreshState Name
 initialFreshState = FreshState
@@ -100,7 +96,7 @@ class (Monad m) => MonadFresh n m where
 instance Monad m => MonadFresh n (FreshT n m) where
   fresh = FreshT $ do
     _ <- _fresh <%= NE.fromList . NE.tail
-    use (_fresh . _neHead)
+    use (_fresh . NE._head)
   {-# INLINE fresh #-}
 
   setFresh = FreshT . put
