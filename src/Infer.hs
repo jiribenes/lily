@@ -33,6 +33,7 @@ import           Error
 import           MonadFresh
 import           Solve
 import           Type
+import           SimplifyType
 
 newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
   deriving stock (Eq, Show)
@@ -85,7 +86,7 @@ inferExpr :: InferEnv -> TopLevel -> Either InferError Scheme
 inferExpr env expr = case runInfer (inferType env expr) of
   Left err -> Left err
   Right (subst, preds, ty) ->
-    Right $ closeOver (subst `apply` preds) (subst `apply` ty)
+    Right $ closeOver (mkSolveEnv ^. classEnv) (subst `apply` preds) (subst `apply` ty)
 
 -- | Take the accumulated constraints and run a solver over them
 runSolve :: [Constraint] -> Infer (Subst, [Constraint])
@@ -147,8 +148,8 @@ inferType env = \case
   TLLetNoBody _ _ -> do
     error "This should never happen!"
 
-closeOver :: [Pred] -> Type -> Scheme
-closeOver preds = normalize . generalize (fromPred <$> preds) S.empty
+closeOver :: ClassEnv -> [Pred] -> Type -> Scheme
+closeOver env preds = normalize env . generalize (fromPred <$> preds) S.empty
 
 extendMonos :: TVar -> Infer a -> Infer a
 extendMonos x = local (S.insert x)
@@ -382,11 +383,12 @@ inferTop env ((name, expr) : xs) = case inferExpr env expr of
   Right ty  -> inferTop (env & typeEnv . at name ?~ ty) xs
 
 -- | Attempt to convert the type scheme into a normal(ish) format  
-normalize :: Scheme -> Scheme
-normalize (Forall origVars qt) = Forall
+normalize :: ClassEnv -> Scheme -> Scheme
+normalize env f = Forall
   (M.elems sub)
-  ((properSub `apply` preds) :=> normtype body)
+  ((properSub `apply` normpreds (S.fromList preds)) :=> normtype body)
  where
+  Forall origVars qt = simplifyScheme f
   preds :=> body = qt
   bodyFV         = S.fromList $ fv body
   usefulVars     = S.toList $ S.fromList origVars `S.intersection` bodyFV
@@ -407,3 +409,6 @@ normalize (Forall origVars qt) = Forall
   normtype (TVar a)   = case a `M.lookup` sub of
     Just x  -> TVar x
     Nothing -> error "tv not in signature"
+
+  normpreds :: S.Set Pred -> [Pred]
+  normpreds preds = S.toList $ S.difference preds env

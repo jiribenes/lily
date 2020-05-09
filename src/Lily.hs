@@ -56,11 +56,7 @@ lily filepath = do
   let initialEnv = mempty
   finalEnv <- foldlM go initialEnv scc'
 
-  -- flexing lens skills \o/
-  let prettyInferEnv =
-        finalEnv ^. typeEnv . to M.toList
-          & each . _2 %~ simplifyScheme
-          & each      %~ prettify
+  let prettyInferEnv = finalEnv ^. typeEnv . to M.toList & each %~ prettify
 
   putDoc $ "let" <+> PP.align (PP.vcat prettyInferEnv)
  where
