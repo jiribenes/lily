@@ -178,6 +178,7 @@ isArrow _ t = isJust $ extractSpecificArrow isSpecificArrow t
 data Qual a = [Pred] :=> a deriving stock (Eq, Show, Ord)
 
 instance Pretty (Qual Type) where
+  pretty ([] :=> t) = pretty t
   pretty (preds :=> t) =
     PP.tupled (pretty <$> preds) <+> "=>" <+> prettyType (S.fromList preds) t
 
@@ -190,14 +191,17 @@ relevantPreds ps t = (\(IsIn _ xs) -> t `elem` xs) `S.filter` ps
 data Scheme = Forall [TVar] (Qual Type) deriving stock (Eq, Show, Ord)
 
 instance Pretty Scheme where -- doesn't use the Pretty (Qual Type) instance to be prettier!
-  pretty (Forall tvs (preds :=> t)) = PP.align (PP.sep inner)
-   where
-    inner :: [PP.Doc ann]
-    inner =
+  pretty (Forall []  qt        ) = pretty qt
+  pretty (Forall tvs ([] :=> t)) = PP.align
+    (PP.sep ["forall" <+> PP.align (PP.sep (pretty <$> tvs)), "=>" <+> pretty t]
+    )
+  pretty (Forall tvs (preds :=> t)) = PP.align
+    (PP.sep
       [ "forall" <+> PP.align (PP.sep (pretty <$> tvs))
       , "." <+> PP.tupled (pretty <$> preds)
       , "=>" <+> prettyType (S.fromList preds) t
       ]
+    )
 
 -- | Substitution is a map from type variables to actual types
 newtype Subst = Subst { unSubst :: M.Map TVar Type}
