@@ -29,8 +29,7 @@ import           Language.C.Clang.Cursor        ( CursorKind
                                                 )
 
 import qualified Assumption                    as A
-import           Clang
-import           ClangType
+import           Clang.OpParser
 import           Core.Syntax
 import           Error
 import           MonadFresh
@@ -223,9 +222,9 @@ freshFun expr = do
 -- | Take an expression and produce assumptions, result type and constraints to be solved
 infer :: Expr -> Infer (A.Assumption Type, Type, [Constraint])
 infer expr = case expr of
-  Literal cursor -> do
-    typ <- note Weirdness $ fromClangType =<< cursorType cursor
-    pure (A.empty, typ, [])
+  Literal cursor typ -> do
+    t <- note Weirdness typ
+    pure (A.empty, t, [])
 
   -- A variable x has type t as an assumption  
   Var cursor x -> do
@@ -244,7 +243,7 @@ infer expr = case expr of
   --           - Fun f
   --           - leq f (as - x)
   --           - wkn x tv as
-  Lam cursor _ x e -> do
+  Lam cursor x e -> do
     (tv, a)     <- freshTypeAndTVar StarKind
     (as, t, cs) <- a `extendMonos` infer e
 

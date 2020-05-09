@@ -1,4 +1,4 @@
-module ClangType
+module Clang.Type
   ( ClangType
   , fromClangType
   )
@@ -11,16 +11,16 @@ import           Language.C.Clang.Type          ( typeCanonicalType
                                                 , typePointeeType
                                                 , typeSpelling
                                                 )
-import qualified Language.C.Clang.Type         as Clang
+import qualified Language.C.Clang.Type         as ClangType
 
 import           Type
 
-type ClangType = Clang.Type
+type ClangType = ClangType.Type
 
 fromClangType :: ClangType -> Maybe Type
-fromClangType clangType = case Clang.typeKind canonicalClangType of
-  Clang.Invalid   -> error "invalid clang type"
-  Clang.Unexposed -> traceShow
+fromClangType clangType = case ClangType.typeKind canonicalClangType of
+  ClangType.Invalid   -> error "invalid clang type"
+  ClangType.Unexposed -> traceShow
     (  "Found type: "
     <> (BS.unpack $ typeSpelling clangType)
     <> ", canonically:"
@@ -28,11 +28,11 @@ fromClangType clangType = case Clang.typeKind canonicalClangType of
     <> ", but returning Nothing for now! TODO"
     )
     Nothing -- TODO: this generally means that the type is a bit involved and you should just use a new type constructor with the given spelling!
-  Clang.Void -> pure typeUnit
-  Clang.Bool -> pure typeBool
-  Clang.Int  -> pure typeInt
-  Clang.UInt  -> pure typeUInt
-  Clang.Pointer ->
+  ClangType.Void -> pure typeUnit
+  ClangType.Bool -> pure typeBool
+  ClangType.Int  -> pure typeInt
+  ClangType.UInt -> pure typeUInt
+  ClangType.Pointer ->
     typePointeeType canonicalClangType >>= fromClangType <&> typePtrOf
   other -> error $ unlines
     [ "internal error: Encountered unknown Clang type (no conversion available!)"

@@ -22,8 +22,9 @@ import           Debug.Trace                    ( traceM )
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
 
-import           Clang
-import           ClangType
+import           Clang.Function
+import           Clang.Type
+import           Clang.OpParser
 import           Core.Located
 import           Core.Syntax
 import           Error
@@ -116,13 +117,18 @@ desugarExpr cursor = case cursorKind cursor of
       throwError DesugarWeirdness
     _ -> throwError DesugarWeirdness
 
-  IntegerLiteral        -> pure $ Literal cursor
-  CharacterLiteral      -> pure $ Literal cursor
-  CXXBoolLiteralExpr    -> pure $ Literal cursor
+  IntegerLiteral        -> desugarLiteral cursor
+  CharacterLiteral      -> desugarLiteral cursor
+  CXXBoolLiteralExpr    -> desugarLiteral cursor
   CXXNullPtrLiteralExpr -> pure $ Builtin cursor BuiltinNullPtr
 
   FirstExpr             -> desugarSingleChild cursor
   other                 -> error $ "found: " <> show other
+
+desugarLiteral :: MonadError DesugarError m => Cursor -> m Expr
+desugarLiteral cursor = do
+  typ <- note DesugarWeirdness $ fromClangType =<< cursorType cursor 
+  pure $ Literal cursor $ Just typ
 
 desugarBlock :: MonadError DesugarError m => T.CursorK 'CompoundStmt -> m Expr
 desugarBlock cursor = do
@@ -240,8 +246,7 @@ desugarParameters = foldlM go id
     -> m (Expr -> Expr)
   go cont cursor = do
     let name      = nameFromBS $ cursorSpelling $ T.withoutKind cursor
-    let clangType = Just $ T.cursorType cursor
-    let lam       = Lam (T.withoutKind cursor) clangType name
+    let lam       = Lam (T.withoutKind cursor) name
 
     pure $ cont . lam
 

@@ -23,8 +23,8 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 , cursorSpelling
                                                 )
 
-import           Clang
-import           ClangType
+import           Clang.Type
+import           Clang.OpParser
 import           Type                           ( Name(..)
                                                 , Type
                                                 )
@@ -34,9 +34,9 @@ import           Type                           ( Name(..)
 -- Multiple different expressions can have and indeed WILL have the same cursor.
 data Expr' t c = Var c Name
                | App c (Expr' t c) (Expr' t c)
-               | Lam c t Name (Expr' t c)
+               | Lam c Name (Expr' t c)
                | LetIn c Name (Expr' t c) (Expr' t c)
-               | Literal c
+               | Literal c t
                | If c (Expr' t c) (Expr' t c) (Expr' t c)
                | Builtin c BuiltinExpr
           deriving stock (Eq, Ord, Show, Functor)
@@ -79,15 +79,15 @@ instance Pretty BuiltinExpr where
   pretty BuiltinUnit    = "#builtin_unit"
   pretty BuiltinNullPtr = "#builtin_nullptr"
 
-type Expr = Expr' (Maybe ClangType) Cursor
+type Expr = Expr' (Maybe Type) Cursor
 type CursorExpr t = Expr' t Cursor
 
 data Let' t c = Let c Name (Expr' t c)
   deriving stock (Eq, Ord, Show, Functor)
 
-type Let = Let' (Maybe ClangType) Cursor
+type Let = Let' (Maybe Type) Cursor
 
-instance Pretty (Let' t Cursor) where
+instance Pretty t => Pretty (Let' t Cursor) where
   pretty (Let _ name expr) =
     "let" <+> pretty name <+> "=" <+> PP.hang 4 (pretty expr)
 
@@ -97,29 +97,32 @@ data TopLevel' t c = TLLet (Let' t c)
   deriving stock (Eq, Ord, Show, Functor)
 makePrisms ''TopLevel'
 
-type TopLevel = TopLevel' (Maybe ClangType) Cursor
+type TopLevel = TopLevel' (Maybe Type) Cursor
 
-instance Pretty (TopLevel' t Cursor) where
+instance Pretty t => Pretty (TopLevel' t Cursor) where
   pretty (TLLet l) = pretty l
   pretty (TLLetRecursive ls) =
     "rec" <+> PP.align (PP.vsep $ NE.toList $ pretty <$> ls)
   pretty (TLLetNoBody _ name) =
     PP.enclose "(*" "*)" $ "predeclared:" <+> "let" <+> pretty name
 
-instance Pretty (Expr' t Cursor) where
+instance Pretty t => Pretty (Expr' t Cursor) where
   pretty (Var _ name       ) = pretty name
   pretty (App _ e1 e2@App{}) = pretty e1 <+> PP.parens (pretty e2)
   pretty (App _ e1 e2      ) = pretty e1 <+> pretty e2
-  pretty (Lam _ _ name expr) = "\\" <> pretty name <+> "->" <+> pretty expr
+  pretty (Lam _ name expr) = "\\" <> pretty name <+> "->" <+> pretty expr
   pretty (LetIn _ name e1 e2) =
     "let" <+> pretty name <+> "=" <+> pretty e1 <+> "in" <+> pretty e2
   pretty (If _ cond thn els) = "if" <+> PP.align
     (PP.vsep [pretty cond, "then" <+> pretty thn, "else" <+> pretty els])
-  pretty (Literal c) =
+  pretty (Literal c t) =
     let spelling = BS.unpack $ cursorSpelling c
-    in  if null spelling
+    in  (if null spelling
           then PP.angles (pretty $ show $ cursorKind c)
           else pretty spelling
+        )
+          <+> "@"
+          <>  PP.parens (pretty t)
   pretty (Builtin _ b) = pretty b
 
 class HasCursor a where
@@ -132,9 +135,9 @@ instance HasCursor (CursorExpr t) where
     getter = \case
       Var c _       -> c
       App c _ _     -> c
-      Lam   c _ _ _ -> c
+      Lam   c _ _   -> c
       LetIn c _ _ _ -> c
-      Literal c     -> c
+      Literal c _   -> c
       If c _ _ _    -> c
       Builtin c _   -> c
     setter :: CursorExpr t -> Cursor -> CursorExpr t

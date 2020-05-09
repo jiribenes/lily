@@ -10,7 +10,6 @@ module Lily
 where
 
 import           Control.Lens
-import           Data.Foldable                  ( foldlM )
 import qualified Data.Map                      as M
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(pretty)
@@ -18,19 +17,14 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc.Render.Text
                                                 ( putDoc )
-import           Debug.Trace                    ( traceM )
 
 import           Clang
+import           Clang.Function
+import           Clang.AST
 import           Core.Desugar                   ( desugarTopLevel )
-import           Core.Syntax                    ( TopLevel'(..)
-                                                , nameL
-                                                , TopLevel
-                                                )
 import           Infer                          ( inferTop
-                                                , InferEnv
                                                 , typeEnv
                                                 )
-import           SimplifyType                   ( simplifyScheme )
 
 lily :: FilePath -> IO ()
 lily filepath = do
