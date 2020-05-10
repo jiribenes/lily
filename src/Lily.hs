@@ -61,5 +61,5 @@ lily filepath = do
 
   let prettyInferEnv = finalEnv ^. typeEnv . to M.toList & each %~ prettify
 
-  putDoc $ "let" <+> PP.align (PP.vcat prettyInferEnv)
-  where prettify (name, sch) = PP.fill 5 (pretty name) <+> "::" <+> pretty sch
+  putDoc $ PP.align (PP.vcat prettyInferEnv)
+  where prettify (name, sch) = PP.fillBreak 10 (pretty name) <+> "::" <+> pretty sch
