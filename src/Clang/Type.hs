@@ -36,7 +36,9 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     typePointeeType canonicalClangType >>= fromClangType <&> typePtrOf
   other -> error $ unlines
     [ "internal error: Encountered unknown Clang type (no conversion available!)"
-    , "\t\tSpelling:\t" <> (BS.unpack $ typeSpelling clangType)
-    , "\t\tKind:\t'" <> show other <> "'"
+    , "\t\tName:\t\t\t" <> BS.unpack (typeSpelling clangType)
+    , "\t\tCanonical type name:\t"
+      <> BS.unpack (typeSpelling canonicalClangType)
+    , "\t\tKind:\t\t\t'" <> show other <> "'"
     ]
   where canonicalClangType = typeCanonicalType clangType

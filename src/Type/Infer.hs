@@ -82,19 +82,15 @@ instance Pretty InferError where
 newtype Infer a = Infer { unInfer :: ReaderT InferMonos (FreshT Name (Except InferError)) a }
   deriving newtype (Functor, Applicative, Monad, MonadReader InferMonos, MonadFresh Name, MonadError InferError)
 
+-- | Helper function to actually run the 'Infer' monad with sensible defaults.
 runInfer :: Infer a -> Either InferError a
 runInfer m =
   runExcept $ evalFreshT (runReaderT (unInfer m) S.empty) initialFreshState
 
--- | Infer a single type for a top-level
-inferTopLevel :: InferEnv -> TopLevel -> Either InferError (M.Map Name Scheme)
-inferTopLevel env tl = case runInfer (inferType env tl) of
-  Left  err -> Left err
-  Right m   -> Right $ M.map
-    (\(subst, preds, ty) -> closeOver (subst `apply` preds) (subst `apply` ty))
-    m
-
 -- | Take the accumulated constraints and run a solver over them
+-- 
+-- Doesn't actually _apply_ the substitution!
+-- That's up to the caller.
 runSolve :: [Constraint] -> Infer (Subst, [Constraint])
 runSolve cs = do
   freshSt <- getFresh
@@ -104,6 +100,15 @@ runSolve cs = do
       setFresh newFresh
       pure result
 
+-- | Infer type schemes for a 'TopLevel' declaration.
+inferTopLevel :: InferEnv -> TopLevel -> Either InferError (M.Map Name Scheme)
+inferTopLevel env tl = case runInfer (inferType env tl) of
+  Left  err -> Left err
+  Right m   -> Right $ M.map
+    (\(subst, preds, ty) -> closeOver (subst `apply` preds) (subst `apply` ty))
+    m
+
+-- | Infer a 'Subst'itution, list of 'Pred'icates and a 'Type' for a 'TopLevel' declaration
 inferType :: InferEnv -> TopLevel -> Infer (M.Map Name (Subst, [Pred], Type))
 inferType env = \case
   TLLet (Let _ name expr) -> do
