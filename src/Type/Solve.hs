@@ -105,6 +105,7 @@ simplify env c@(CIn _ n ts) cs
   | otherwise                = simplifyGeq (findConstraint env cs) c
 simplify _ c _ = [c]
 
+-- | Find the given constraint either among the other constraints or in the 'ClassEnv'
 findConstraint :: ClassEnv -> [Constraint] -> Constraint -> Bool
 findConstraint env (c : cs) x | c == x    = True
                               | otherwise = findConstraint env cs x
@@ -120,8 +121,16 @@ simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow =
   traceShow ("deleting", pretty c) []
 simplifyGeq _ c = [c]
 
+-- | Simplifies constraints until a fix-point is reached
+-- where no more constraints can be simplified
+-- 
+-- TODO: This should ideally also have a counter so
+-- we can't loop infinitely (but we really shouldn't!)
 simplifyMany :: ClassEnv -> [Constraint] -> [Constraint]
-simplifyMany e cs = chooseOne cs >>= uncurry (simplify e)
+simplifyMany e cs | cs == cs' = cs
+                  | otherwise = simplifyMany e cs'
+  where
+    cs' = chooseOne cs >>= uncurry (simplify e)
 
 -- Solving:
 solve :: [Constraint] -> Solve (Subst, [Constraint])
