@@ -62,8 +62,8 @@ instance Pretty InferError where
   pretty (FromSolve x) = pretty x
   pretty (UnboundVariables as) =
     "Not in scope:" <+> PP.indent 4 (PP.vsep $ pretty <$> as)
-  pretty (WrongPredicate   pred) = "Wrong predicate:" <+> pretty pred
-  pretty (WrongConstructor n   ) = "Wrong constructor:" <+> pretty n
+  pretty (WrongPredicate   p) = "Wrong predicate:" <+> pretty p
+  pretty (WrongConstructor n) = "Wrong constructor:" <+> pretty n
   pretty (WrongConstraint cs) =
     "Wrong constraints:" <+> PP.indent 4 (PP.vsep $ pretty <$> cs)
   pretty Weirdness = "Encountered general weirdness! What?"
@@ -164,10 +164,10 @@ inferType env = \case
       let relevantConstraints cs = cs <> cs'
       let prettify x =
             show (x & pretty, x ^. reasonL & pretty, ts ^?! _head & pretty)
-      let go cs = runSolve $ -- trace
+      let go cs =
+            runSolve $ -- trace
             --(unlines $ prettify <$> relevantConstraints cs)
-            relevantConstraints
-            cs
+                       relevantConstraints cs
       traverse go css
 
     results <- for (zip ts solverResults) $ \(t, (subst, unsolved)) -> do
@@ -179,8 +179,8 @@ inferType env = \case
         $ throwError
         $ WrongConstraint unsolved
 
-      pure
-        $ {-traceShow (pretty subst, pretty preds, pretty t')-} (subst, preds, t')
+      pure $ {-traceShow (pretty subst, pretty preds, pretty t')-}
+             (subst, preds, t')
 
     let nameAndResult = zip names results
     pure $ M.fromList nameAndResult
@@ -191,13 +191,19 @@ closeOver preds =
   normalize (mkSolveEnv ^. classEnv)
     . generalize (fromPred BecauseCloseOver <$> preds) S.empty
 
-extendMonos :: TVar -> Infer a -> Infer a
-extendMonos x = local (S.insert x)
+-- | Executes a 'Infer' computation with additional monotype
+extendMono :: TVar -> Infer a -> Infer a
+extendMono x = local (S.insert x)
 
-extendManyMonos :: [TVar] -> Infer a -> Infer a
-extendManyMonos xs = local (<> S.fromList xs)
+-- | Executes a 'Infer' computation with additional monotypes
+extendMonos :: [TVar] -> Infer a -> Infer a
+extendMonos xs = local (<> S.fromList xs)
 
--- helper constructors
+-- TODO: Audit 'makeFn2' and 'makeFn3'
+-- as they are using a type that's not really helpful!
+--
+-- We don't want to use 'typeArrow' anywhere,
+-- and ideally we'd like to deprecate it completely!
 makeFn2 :: Type -> Type -> Type
 makeFn2 a b = typeArrow `TAp` a `TAp` b
 
@@ -254,7 +260,7 @@ infer expr = case expr of
   --           - wkn x tv as
   Lam cursor x e -> do
     (tv, a)     <- freshTypeAndTVar StarKind
-    (as, t, cs) <- a `extendMonos` infer e
+    (as, t, cs) <- a `extendMono` infer e
 
     (f, fPreds) <- freshFun expr -- this is the arrow kind
     let as'   = as `A.remove` x
