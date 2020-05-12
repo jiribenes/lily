@@ -3,6 +3,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Lily
   ( lily
@@ -17,6 +18,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc.Render.Text
                                                 ( putDoc )
+import           System.Exit                    ( exitFailure )
 
 import           Clang
 import           Clang.AST
@@ -28,7 +30,10 @@ import           Type.Infer                     ( inferTop
 
 lily :: FilePath -> IO ()
 lily filepath = do
-  tu <- createTranslationUnit filepath []
+  tu <- createTranslationUnit filepath [] >>= \case
+    Just x  -> pure x
+    Nothing -> exitFailure
+
   printAST tu
 
   putStrLn "----------------------"
@@ -51,7 +56,7 @@ lily filepath = do
   finalEnv <- case inferTop initialEnv scc' of
     Left err -> do
       putStrLn "======================"
-      putStrLn "Error happened!"
+      putStrLn "Error happened during inference!"
       putStrLn "----------------------"
       putDoc $ pretty err
       putStrLn ""
@@ -62,4 +67,5 @@ lily filepath = do
   let prettyInferEnv = finalEnv ^. typeEnv . to M.toList & each %~ prettify
 
   putDoc $ PP.align (PP.vcat prettyInferEnv)
-  where prettify (name, sch) = PP.fillBreak 10 (pretty name) <+> "::" <+> pretty sch
+ where
+  prettify (name, sch) = PP.fillBreak 10 (pretty name) <+> "::" <+> pretty sch
