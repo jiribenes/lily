@@ -82,8 +82,10 @@ calledFunctions = referencedCalls . functionDecls
  where
   referencedCalls :: Fold Cursor Cursor
   referencedCalls =
-    cursorDescendantsF . folding (T.matchKind @ 'CallExpr) . folding
+    cursorDescendantsF . folding (T.matchKind @ 'DeclRefExpr) . folding
       (fmap cursorCanonical . cursorReferenced . T.withoutKind)
+  -- this is in fact necessary and sufficient because we have to reference previously declared functions,
+  -- but they can also be just references to a function pointer instead of a 'CallExpr'
 
   functionDecls :: Fold Cursor SomeFunctionCursor
   functionDecls = folding toSomeFunction
