@@ -28,7 +28,9 @@ import           Clang.OpParser
 import           Core.Located
 import           Core.Syntax
 import           Error
-import           Name                           ( Name(Name), nameFromBS )
+import           Name                           ( Name(Name)
+                                                , nameFromBS
+                                                )
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -95,7 +97,6 @@ desugarExpr cursor = case cursorKind cursor of
     pure $ App cursor (App cursor subscriptBuiltin leftExpr) rightExpr
 
   CallExpr -> do
-    -- TODO: handle single argument function calls!
     exprs <- traverse desugarExpr $ cursorChildren cursor
 
     pure $ foldl1 (App cursor) exprs
@@ -125,7 +126,7 @@ desugarExpr cursor = case cursorKind cursor of
 
 desugarLiteral :: MonadError DesugarError m => Cursor -> m Expr
 desugarLiteral cursor = do
-  typ <- note DesugarWeirdness $ fromClangType =<< cursorType cursor 
+  typ <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
   pure $ Literal cursor $ Just typ
 
 desugarBlock :: MonadError DesugarError m => T.CursorK 'CompoundStmt -> m Expr
@@ -166,12 +167,13 @@ desugarBlockOne cursor = case cursorKind cursor of
         pure $ \rest -> LetIn child name expr rest
       _ -> throwError UnknownDeclarationKindInBlock
 
-  ReturnStmt -> do
-    let [child] = cursorChildren cursor
+  ReturnStmt -> case cursorChildren cursor of
+    [child] -> do
+      expr <- desugarExpr child
 
-    expr <- desugarExpr child
-
-    pure $ \_ -> expr
+      pure $ \_ -> expr
+    [] -> pure $ \_ -> unit cursor
+    _  -> throwError DesugarWeirdness
 
   IfStmt -> case cursorChildren cursor of
     [cond, thn] -> do
@@ -190,7 +192,14 @@ desugarBlockOne cursor = case cursorKind cursor of
 
     _ -> throwError InvalidIfShape
 
+  CallExpr -> do
+      -- TODO: should we force here that this has a void return value?
+      --       what to do otherwise with ignored return values?
+    expr <- desugarExpr cursor
+    pure $ \rest -> LetIn cursor (Name "_") expr rest
+
   other -> do
+    -- best effort 
     traceM $ "Encountered: " <> show other <> " in a block. Hopefully it's ok!"
     traceM "I'll interpret it as a normal expression!"
     -- it's not a declaration
@@ -243,8 +252,8 @@ desugarParameters = foldlM go id
     -> T.CursorK 'ParmDecl
     -> m (Expr -> Expr)
   go cont cursor = do
-    let name      = nameFromBS $ cursorSpelling $ T.withoutKind cursor
-    let lam       = Lam (T.withoutKind cursor) name
+    let name = nameFromBS $ cursorSpelling $ T.withoutKind cursor
+    let lam  = Lam (T.withoutKind cursor) name
 
     pure $ cont . lam
 
