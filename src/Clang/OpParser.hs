@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -6,6 +7,7 @@ module Clang.OpParser
   ( BinOp(..)
   , parseBinOp
   , isAssignOp
+  , withoutAssign
   , UnaryFixity(..)
   , getFixity
   , UnOp(..)
@@ -64,6 +66,20 @@ data BinOp = BinOpPtrMemD
 
 isAssignOp :: BinOp -> Bool
 isAssignOp o = o >= BinOpAssign && o <= BinOpOrAssign
+
+withoutAssign :: BinOp -> Maybe BinOp
+withoutAssign = \case
+  BinOpMulAssign -> Just BinOpMul
+  BinOpDivAssign -> Just BinOpDiv
+  BinOpRemAssign -> Just BinOpRem
+  BinOpAddAssign -> Just BinOpAdd
+  BinOpSubAssign -> Just BinOpSub
+  BinOpShlAssign -> Just BinOpShl
+  BinOpShrAssign -> Just BinOpShr
+  BinOpAndAssign -> Just BinOpAnd
+  BinOpXorAssign -> Just BinOpXor
+  BinOpOrAssign -> Just BinOpOr
+  _ -> Nothing
 
 parseBinOpToken :: ByteString -> Maybe BinOp
 parseBinOpToken ".*"  = pure BinOpPtrMemD
