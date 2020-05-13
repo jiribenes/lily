@@ -40,9 +40,7 @@ fromList = ClassEnv . flip elem
 
 initialClassEnv :: ClassEnv
 initialClassEnv = fromList
-  [ PNum typeInt -- TODO: Deprecate PNum
-
-  , PUn typeChar
+  [ PUn typeChar
   , PUn typeInt
   , PUn typeBool
   , PUn typeUnArrow

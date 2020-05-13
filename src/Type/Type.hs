@@ -129,8 +129,6 @@ pattern PUn :: Type -> Pred
 pattern PUn x <- IsIn "Un" [x] where PUn x = IsIn "Un" [x]
 pattern PGeq :: Type -> Type -> Pred
 pattern PGeq x y <- IsIn "Geq" [x, y] where PGeq x y = IsIn "Geq" [x, y]
-pattern PNum :: Type -> Pred
-pattern PNum x <- IsIn "Num" [x] where PNum x = IsIn "Num" [x]
 
 pattern LinArrow :: Type -> Type -> Type
 pattern LinArrow a b <- (extractSpecificArrow (== conLinArrow) -> Just (a, b)) 
