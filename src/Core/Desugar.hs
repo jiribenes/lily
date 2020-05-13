@@ -1,3 +1,5 @@
+{-# LANGUAGE ConstraintKinds #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DataKinds #-}
@@ -15,10 +17,16 @@ import           Control.Lens
 import           Control.Monad.Except           ( MonadError
                                                 , throwError
                                                 )
+import           Control.Monad                  ( unless )
+import           Control.Monad.Reader           ( runReaderT
+                                                , MonadReader
+                                                )
 import           Data.Foldable                  ( foldlM )
 import qualified Data.Graph                    as G
 import qualified Data.List.NonEmpty            as NE
-import           Data.Maybe                     (isJust,  fromJust )
+import           Data.Maybe                     ( isJust
+                                                , fromJust
+                                                )
 import           Debug.Trace                    ( traceM )
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
@@ -26,7 +34,7 @@ import qualified Language.C.Clang.Cursor.Typed as T
 import           Clang.Function
 import           Clang.Type
 import           Clang.OpParser
-import           Clang.Struct                  ( StructCursor )
+import           Clang.Struct                   ( StructCursor )
 import           Core.Located
 import           Core.Syntax
 import           Error
@@ -37,7 +45,7 @@ import           Type.Type                      ( Kind(..)
                                                 , TCon(..)
                                                 , Type(..)
                                                 )
-import Control.Monad (unless)
+
 
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
@@ -50,7 +58,13 @@ data DesugarError = WeirdFunctionBody
                   | DesugarWeirdness -- this is a catch-all TODO: replace by appropriate use!
     deriving stock (Show, Eq)
 
-desugarExpr :: MonadError DesugarError m => Cursor -> m Expr
+newtype DesugarEnv = DesugarEnv { _allStructs :: [Struct] }
+  deriving stock (Eq, Show)
+  deriving newtype (Monoid, Semigroup)
+
+type MonadDesugar m = (MonadError DesugarError m, MonadReader DesugarEnv m)
+
+desugarExpr :: MonadDesugar m => Cursor -> m Expr
 desugarExpr cursor = case cursorKind cursor of
   BinaryOperator -> do
     let [left, right] = cursorChildren cursor
@@ -184,26 +198,25 @@ desugarExpr cursor = case cursorKind cursor of
   FirstExpr             -> desugarSingleChild cursor
   other                 -> error $ "found: " <> show other
 
-desugarLiteral :: MonadError DesugarError m => Cursor -> m Expr
+desugarLiteral :: MonadDesugar m => Cursor -> m Expr
 desugarLiteral cursor = do
   typ <- extractType cursor
   pure $ Literal cursor typ
 
-desugarBlock :: MonadError DesugarError m => T.CursorK 'CompoundStmt -> m Expr
+desugarBlock :: MonadDesugar m => T.CursorK 'CompoundStmt -> m Expr
 desugarBlock cursor = do
   result <- longFunc
   pure $ result $ unit (T.withoutKind cursor)
  where
-  go
-    :: MonadError DesugarError m => (Expr -> Expr) -> Cursor -> m (Expr -> Expr)
+  go :: MonadDesugar m => (Expr -> Expr) -> Cursor -> m (Expr -> Expr)
   go cont c = do
     resultFn <- desugarBlockOne c
     pure $ cont . resultFn
 
-  longFunc :: MonadError DesugarError m => m (Expr -> Expr)
+  longFunc :: MonadDesugar m => m (Expr -> Expr)
   longFunc = foldlM go id $ T.cursorChildren cursor
 
-desugarStmt :: MonadError DesugarError m => Cursor -> m Expr
+desugarStmt :: MonadDesugar m => Cursor -> m Expr
 desugarStmt cursor = case cursorKind cursor of
   CompoundStmt ->
     desugarBlock $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
@@ -211,7 +224,7 @@ desugarStmt cursor = case cursorKind cursor of
     stmtCont <- desugarBlockOne cursor
     pure $ stmtCont $ unit cursor
 
-desugarBlockOne :: MonadError DesugarError m => Cursor -> m (Expr -> Expr)
+desugarBlockOne :: MonadDesugar m => Cursor -> m (Expr -> Expr)
 desugarBlockOne cursor = case cursorKind cursor of
   DeclStmt -> do
     let [child] = cursorChildren cursor
@@ -264,22 +277,24 @@ desugarBlockOne cursor = case cursorKind cursor of
     expr <- desugarExpr cursor
     pure $ \rest -> LetIn cursor (Name "_") expr rest
 
-  BinaryOperator -> do  
+  BinaryOperator -> do
     let [left, right] = cursorChildren cursor
 
-    binOp     <- note UnknownBinaryOperation
+    binOp <- note UnknownBinaryOperation
       $ parseBinOp (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
 
     unless (isAssignOp binOp) $ throwError DesugarWeirdness
-    unless (not $ isJust $ withoutAssign binOp) $ error "+= etc. not supported yet"
+    unless (not $ isJust $ withoutAssign binOp)
+      $ error "+= etc. not supported yet"
 
     leftExpr  <- desugarExpr left
     rightExpr <- desugarExpr right
 
-    let setter = App cursor (App cursor (Builtin cursor BuiltinSet) leftExpr) rightExpr 
+    let setter =
+          App cursor (App cursor (Builtin cursor BuiltinSet) leftExpr) rightExpr
 
-    pure $ \rest -> LetIn cursor (Name "_") setter rest 
-    
+    pure $ \rest -> LetIn cursor (Name "_") setter rest
+
   other -> do
     -- best effort 
     traceM $ "Encountered: " <> show other <> " in a block. Hopefully it's ok!"
@@ -292,13 +307,14 @@ desugarBlockOne cursor = case cursorKind cursor of
     -- TODO: make throwaway name!
     pure $ \rest -> LetIn cursor (Name "_") expr rest
 
-desugarSingleChild :: MonadError DesugarError m => Cursor -> m Expr
+desugarSingleChild :: MonadDesugar m => Cursor -> m Expr
 desugarSingleChild cursor = do
   let [child] = cursorChildren cursor
   desugarExpr child
 
 desugarTopLevelFunction
-  :: MonadError DesugarError m => SomeFunctionCursor -> m TopLevel
+  :: MonadReader DesugarEnv m
+  => MonadDesugar m => SomeFunctionCursor -> m TopLevel
 desugarTopLevelFunction = \case
   SomeConstructor c -> desugarConstructor c
   cursor            -> do
@@ -323,11 +339,10 @@ desugarTopLevelFunction = \case
         let function = functionHeader functionBody
 
         pure $ TLLet $ Let untypedCursor name function
-      _  -> throwError WeirdFunctionBody
+      _ -> throwError WeirdFunctionBody
 
 -- TODO: Add constructor specialties if needed
-desugarConstructor
-  :: MonadError DesugarError m => ConstructorCursor -> m TopLevel
+desugarConstructor :: MonadDesugar m => ConstructorCursor -> m TopLevel
 desugarConstructor cursor = do
   -- these are typically the first children but I really want to be safe here 
   let parameterF :: Fold Cursor (T.CursorK 'ParmDecl)
@@ -350,14 +365,15 @@ desugarConstructor cursor = do
       let function = functionHeader functionBody
 
       pure $ TLLet $ Let untypedCursor name function
-    _  -> throwError WeirdFunctionBody
+    _ -> throwError WeirdFunctionBody
 
 desugarParameters
-  :: MonadError DesugarError m => [T.CursorK 'ParmDecl] -> m (Expr -> Expr)
+  :: MonadReader DesugarEnv m
+  => MonadDesugar m => [T.CursorK 'ParmDecl] -> m (Expr -> Expr)
 desugarParameters = foldlM go id
  where
   go
-    :: MonadError DesugarError m
+    :: MonadDesugar m
     => (Expr -> Expr)
     -> T.CursorK 'ParmDecl
     -> m (Expr -> Expr)
@@ -368,7 +384,8 @@ desugarParameters = foldlM go id
     pure $ cont . lam
 
 desugarSCCTopLevel
-  :: MonadError DesugarError m => G.SCC SomeFunctionCursor -> m TopLevel
+  :: MonadReader DesugarEnv m
+  => MonadDesugar m => G.SCC SomeFunctionCursor -> m TopLevel
 desugarSCCTopLevel (G.AcyclicSCC cursor ) = desugarTopLevelFunction cursor
 desugarSCCTopLevel (G.CyclicSCC  cursors) = do
   topLevelFunctions <- traverse desugarTopLevelFunction cursors
@@ -382,11 +399,13 @@ desugarTopLevel
   -> [G.SCC SomeFunctionCursor]
   -> Either DesugarError [TopLevel]
 desugarTopLevel structs fnSccs = do
-  tlStructs <- traverse desugarStruct structs
-  tlFns     <- traverse desugarSCCTopLevel fnSccs
-  pure $ tlStructs <> tlFns
+  desugaredStructs <- traverse desugarStruct structs
+  let desugarEnv = DesugarEnv desugaredStructs
 
-desugarStruct :: MonadError DesugarError m => StructCursor -> m TopLevel
+  tlFns <- traverse (flip runReaderT desugarEnv . desugarSCCTopLevel) fnSccs
+  pure $ (TLStruct <$> desugaredStructs) <> tlFns
+
+desugarStruct :: MonadError DesugarError m => StructCursor -> m Struct
 desugarStruct cursor = do
   let fields =
         cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'FieldDecl)
@@ -397,7 +416,7 @@ desugarStruct cursor = do
   let tcon   = TCon $ TC name StarKind
 
   let struct = Struct (T.withoutKind cursor) tcon name desugaredFields
-  pure $ TLStruct struct
+  pure struct
 
 desugarField
   :: MonadError DesugarError m => T.CursorK 'FieldDecl -> m StructField
