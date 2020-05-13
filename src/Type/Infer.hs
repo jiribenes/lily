@@ -111,7 +111,8 @@ inferTopLevel env tl = case runInfer (inferType env tl) of
 -- | Infer a 'Subst'itution, list of 'Pred'icates and a 'Type' for a 'TopLevel' declaration
 inferType :: InferEnv -> TopLevel -> Infer (M.Map Name (Subst, [Pred], Type))
 inferType env = \case
-  TLLet (Let _ name expr) -> do
+  TLStruct _                 -> pure $ mempty
+  TLLet    (Let _ name expr) -> do
     (as, t, cs) <- infer expr
 
     let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
@@ -448,7 +449,7 @@ infer expr = case expr of
     BuiltinNew typ -> do
       resultType <- freshType StarKind
 
-      pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])  
+      pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])
 
 -- | This is the top-level function that should be used for inferring a type of something
 inferTop :: InferEnv -> [TopLevel] -> Either InferError InferEnv

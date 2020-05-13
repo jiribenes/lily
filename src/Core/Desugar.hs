@@ -25,20 +25,24 @@ import qualified Language.C.Clang.Cursor.Typed as T
 import           Clang.Function
 import           Clang.Type
 import           Clang.OpParser
+import           Clang.Struct
 import           Core.Located
 import           Core.Syntax
 import           Error
 import           Name                           ( Name(Name)
                                                 , nameFromBS
                                                 )
-
+import           Type.Type                      ( Type )
+import           Debug.Trace.Pretty
 data DesugarError = WeirdFunctionBody
                   | UnknownBinaryOperation
                   | UnknownUnaryOperation
                   | UnknownDeclarationKindInBlock
                   | BlockExpected Location
                   | InvalidIfShape
-                  | DesugarWeirdness
+                  | ExpectedValidType
+                  | NotImplementedYet
+                  | DesugarWeirdness -- this is a catch-all TODO: replace by appropriate use!
     deriving stock (Show, Eq)
 
 desugarExpr :: MonadError DesugarError m => Cursor -> m Expr
@@ -49,8 +53,8 @@ desugarExpr cursor = case cursorKind cursor of
     leftExpr  <- desugarExpr left
     rightExpr <- desugarExpr right
 
-    resultTyp <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
-    opTyp     <- note DesugarWeirdness $ fromClangType =<< cursorType left
+    resultTyp <- extractType cursor
+    opTyp     <- extractType left
 
     binOp     <- note UnknownBinaryOperation
       $ parseBinOp (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
@@ -62,8 +66,8 @@ desugarExpr cursor = case cursorKind cursor of
 
     childExpr <- desugarExpr child
 
-    resultTyp <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
-    opTyp     <- note DesugarWeirdness $ fromClangType =<< cursorType child
+    resultTyp <- extractType cursor
+    opTyp     <- extractType child
 
     unOp      <- note UnknownUnaryOperation
       $ parseUnOp (fromJust $ T.matchKind @ 'UnaryOperator $ cursor)
@@ -76,12 +80,19 @@ desugarExpr cursor = case cursorKind cursor of
     pure $ Var cursor name
 
   CXXNewExpr -> do
-    child     <- note DesugarWeirdness $ cursorChildren cursor ^? _last
-    typ       <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
+    -- TODO: This is not correct at all!
+    -- look at 'new int' vs 'new int[7]' vs 'new Struct' vs 'new Struct[10]'
+    case cursorChildren cursor of
+      [] -> do
+        typ <- extractType cursor
+        pure $ Builtin cursor (BuiltinNew typ)
+      xs -> do
+        typ       <- extractType cursor
+        child     <- note DesugarWeirdness $ xs ^? _last
 
-    childExpr <- desugarExpr child
+        childExpr <- desugarExpr child
 
-    pure $ App cursor (Builtin cursor (BuiltinNew typ)) childExpr
+        pure $ App cursor (Builtin cursor (BuiltinNewArray typ)) childExpr
 
   ArraySubscriptExpr -> do
     let [left, right] = cursorChildren cursor
@@ -89,8 +100,8 @@ desugarExpr cursor = case cursorKind cursor of
     leftExpr     <- desugarExpr left
     rightExpr    <- desugarExpr right
 
-    arrayTyp     <- note DesugarWeirdness $ fromClangType =<< cursorType left
-    subscriptTyp <- note DesugarWeirdness $ fromClangType =<< cursorType right
+    arrayTyp     <- extractType left
+    subscriptTyp <- extractType right
 
     let subscriptBuiltin =
           Builtin cursor $ BuiltinArraySubscript arrayTyp subscriptTyp
@@ -99,7 +110,12 @@ desugarExpr cursor = case cursorKind cursor of
   CallExpr -> do
     exprs <- traverse desugarExpr $ cursorChildren cursor
 
-    pure $ foldl1 (App cursor) exprs
+    -- TODO: can we write this using Lens?
+    let exprs' = case exprs of
+          [] -> [unit cursor]
+          xs -> xs
+
+    pure $ foldl1 (App cursor) exprs'
 
   MemberRefExpr -> case cursorChildren cursor of
     [child] -> do
@@ -113,7 +129,7 @@ desugarExpr cursor = case cursorKind cursor of
       pure $ App cursor (App cursor memberRef expr) member
     [] -> do
       traceM "I don't support weird member reference for C++ classes yet! TODO"
-      throwError DesugarWeirdness
+      throwError NotImplementedYet
     _ -> throwError DesugarWeirdness
 
   IntegerLiteral        -> desugarLiteral cursor
@@ -126,7 +142,7 @@ desugarExpr cursor = case cursorKind cursor of
 
 desugarLiteral :: MonadError DesugarError m => Cursor -> m Expr
 desugarLiteral cursor = do
-  typ <- note DesugarWeirdness $ fromClangType =<< cursorType cursor
+  typ <- extractType cursor
   pure $ Literal cursor $ Just typ
 
 desugarBlock :: MonadError DesugarError m => T.CursorK 'CompoundStmt -> m Expr
@@ -158,9 +174,9 @@ desugarBlockOne cursor = case cursorKind cursor of
 
     case cursorKind child of
       VarDecl -> do
-        let [grandchild] = cursorChildren child
+        grandchild <- note DesugarWeirdness $ cursorChildren child ^? _last
 
-        expr <- desugarExpr grandchild
+        expr       <- desugarExpr grandchild
 
         let name = nameFromBS $ cursorSpelling child
 
@@ -267,5 +283,34 @@ desugarSCCTopLevel (G.CyclicSCC  cursors) = do
     [] -> throwError DesugarWeirdness
     xs -> xs & NE.fromList & TLLetRecursive & pure
 
-desugarTopLevel :: [G.SCC SomeFunctionCursor] -> Either DesugarError [TopLevel]
-desugarTopLevel = traverse desugarSCCTopLevel
+desugarTopLevel
+  :: [StructCursor]
+  -> [G.SCC SomeFunctionCursor]
+  -> Either DesugarError [TopLevel]
+desugarTopLevel structs fnSccs = do
+  tlStructs <- traverse desugarStruct structs
+  tlFns     <- traverse desugarSCCTopLevel fnSccs
+  pure $ tlStructs <> tlFns
+
+desugarStruct :: MonadError DesugarError m => StructCursor -> m TopLevel
+desugarStruct cursor = do
+  let fields =
+        cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'FieldDecl)
+  let name = nameFromBS $ T.cursorSpelling cursor
+
+  desugaredFields <- traverse desugarField fields
+
+  let struct = Struct (T.withoutKind cursor) name desugaredFields
+  pure $ TLStruct struct
+
+desugarField
+  :: MonadError DesugarError m => T.CursorK 'FieldDecl -> m StructField
+desugarField cursor = do
+  let untypedCursor = T.withoutKind cursor
+  let name          = nameFromBS $ T.cursorSpelling cursor
+  let typ           = fromClangType =<< cursorType untypedCursor
+
+  pure $ StructField untypedCursor typ name
+
+extractType :: MonadError DesugarError m => Cursor -> m Type
+extractType c = note ExpectedValidType $ fromClangType =<< cursorType c

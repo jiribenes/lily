@@ -42,7 +42,7 @@ library
   exposed-modules:     Lily
   other-modules:       Control.Monad.Fresh, 
                        Control.Lens.NonEmpty, 
-                       Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, 
+                       Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, Clang.Struct,
                        Type.Infer, Type.Solve, Type.Unify, Type.Assumption, Type.Type, Type.Simplify, Type.Constraint, 
                        Error, 
                        Core.Desugar, Core.Syntax, Core.Located, 

@@ -23,6 +23,7 @@ import           System.Exit                    ( exitFailure )
 import           Clang
 import           Clang.AST
 import           Clang.Function
+import qualified Clang.Struct                  as C
 import           Core.Desugar                   ( desugarTopLevel )
 import           Type.Infer                     ( inferTop
                                                 , typeEnv
@@ -35,13 +36,16 @@ lily filepath = do
     Nothing -> exitFailure
 
   printAST tu
+  putStrLn "----------------------"
+  let structs = C.structs tu
+  print structs
 
   putStrLn "----------------------"
   let scc = recursiveComponents tu
   print scc
 
   putStrLn "----------------------"
-  scc' <- case desugarTopLevel scc of
+  scc' <- case desugarTopLevel structs scc of
     Left err -> do
       putStrLn "Desugaring failed!"
       putStrLn $ "Error: " <> show err

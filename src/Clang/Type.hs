@@ -14,10 +14,14 @@ import           Language.C.Clang.Type          ( typeCanonicalType
 import qualified Language.C.Clang.Type         as ClangType
 
 import           Type.Type
+import           Name                           ( nameFromBS )
+
+--TODO: remove this
+import           GHC.Stack                      ( HasCallStack )
 
 type ClangType = ClangType.Type
 
-fromClangType :: ClangType -> Maybe Type
+fromClangType :: HasCallStack => ClangType -> Maybe Type
 fromClangType clangType = case ClangType.typeKind canonicalClangType of
   ClangType.Invalid   -> error "invalid clang type"
   ClangType.Unexposed -> traceShow
@@ -34,6 +38,11 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
   ClangType.UInt -> pure typeUInt
   ClangType.Pointer ->
     typePointeeType canonicalClangType >>= fromClangType <&> typePtrOf
+  ClangType.Record -> do
+    let name = nameFromBS $ typeSpelling canonicalClangType
+    let tc   = TC name StarKind -- TODO: get kind from clang
+    pure (TCon tc)
+
   other -> error $ unlines
     [ "internal error: Encountered unknown Clang type (no conversion available!)"
     , "\t\tName:\t\t\t" <> BS.unpack (typeSpelling clangType)
