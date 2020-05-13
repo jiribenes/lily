@@ -308,7 +308,8 @@ infer expr = case expr of
     (as2, t2, cs2) <- infer e2
     monos          <- ask
     tv             <- freshType StarKind
-    let preds = nub $ unrestricted (as1 `A.intersection` as2) <> wkn x tv as2 -- Q in paper
+    let preds = because (BecauseExpr expr) <$> (nub $ unrestricted (as1 `A.intersection` as2) <> wkn x t1 as2) -- Q in paper
+
     pure
       ( as1 <> as2 `A.remove` x
       , t2
