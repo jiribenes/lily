@@ -1,5 +1,6 @@
-{ mkDerivation, base, bytestring, clang-pure, containers, lens, mtl
-, prettyprinter, stdenv, text, transformers, unordered-containers
+{ mkDerivation, base, bytestring, clang-pure, containers, directory
+, lens, mtl, prettyprinter, stdenv, text, transformers
+, unordered-containers
 }:
 mkDerivation {
   pname = "lily";
@@ -12,8 +13,8 @@ mkDerivation {
     transformers unordered-containers
   ];
   executableHaskellDepends = [
-    base bytestring clang-pure containers lens mtl prettyprinter text
-    transformers unordered-containers
+    base bytestring clang-pure containers directory lens mtl
+    prettyprinter text transformers unordered-containers
   ];
   testHaskellDepends = [
     base bytestring clang-pure containers lens mtl prettyprinter text
