@@ -25,18 +25,17 @@ simplifyScheme (Forall tvs qt@(preds :=> _)) =
 
 substFunctionVar :: S.Set Pred -> TVar -> Subst
 substFunctionVar preds tv
-  | typeKind f == arrowKind && filterRelevant f preds == S.fromList [PFun f]
-  = Subst $ M.singleton tv typeLinArrow
+  -- | typeKind f
+  --  == arrowKind
+  --  && filterRelevant f preds
+  --  == S.fromList [PFun f]
+  -- -- by Morris -> is equivalent to Fun f => -{f}> for fresh f
+  -- = Subst $ M.singleton tv typeArrow
   | typeKind f == arrowKind && filterRelevant f preds == S.fromList
     [PFun f, PUn f]
   = Subst $ M.singleton tv typeUnArrow
   | otherwise
   = emptySubst
-  where f = TVar tv
-
-filterRelevant :: Type -> S.Set Pred -> S.Set Pred
-filterRelevant t = S.foldl' go mempty
  where
-  go :: S.Set Pred -> Pred -> S.Set Pred
-  go acc p@(IsIn _ ts) | t `elem` ts = S.insert p acc
-                       | otherwise   = acc
+  f            = TVar tv
+

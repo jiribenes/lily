@@ -170,11 +170,6 @@ instance Pretty (Qual Type) where
   pretty (preds :=> t) =
     PP.tupled (pretty <$> preds) <+> "=>" <+> prettyType (S.fromList preds) t
 
-isOnlyFun :: S.Set Pred -> Type -> Bool
-isOnlyFun ps t = S.singleton (PFun t) == relevantPreds ps t
-relevantPreds :: S.Set Pred -> Type -> S.Set Pred
-relevantPreds ps t = (\(IsIn _ xs) -> t `elem` xs) `S.filter` ps
-
 -- | A type scheme is a list of type variables and a qualified type
 data Scheme = Forall [TVar] (Qual Type) deriving stock (Eq, Show, Ord)
 
@@ -255,6 +250,9 @@ instance FreeTypeVars Type where
 instance FreeTypeVars TVar where
   ftv = S.singleton
 
+instance FreeTypeVars Pred where
+  ftv (IsIn _ ts) = ftv $ NE.toList ts
+
 instance FreeTypeVars Scheme where
   ftv (Forall as qt) = ftv qt `S.difference` S.fromList as
 
@@ -285,3 +283,11 @@ typeKind (TVar (TV _ k)) = k
 typeKind (TAp a _      ) = case typeKind a of
   ArrowKind _ k -> k
   k             -> k
+
+-- | Filter relevant predicates to given type
+filterRelevant :: Type -> S.Set Pred -> S.Set Pred
+filterRelevant t = S.filter isIn
+ where
+  isIn :: Pred -> Bool
+  isIn (IsIn _ ts) = t `elem` ts
+

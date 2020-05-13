@@ -218,11 +218,14 @@ makeFn3 a b c = typeArrow `TAp` a `TAp` makeFn2 b c
 makeArrow :: Type -> Type -> Type -> Type
 makeArrow x f y = f `TAp` x `TAp` y
 
--- | Adds a 'Geq u t' constraint for every type 'u' in the assumptions
+-- | Adds a @Geq u t@ constraint for every type @u@ in the assumptions
 leq :: Type -> A.Assumption Type -> [Constraint]
 leq t = fmap (\x -> CGeq BecauseLeq x t) . A.values
 
--- | Adds a 'Un' constraint if the name is in assumptions
+-- | Adds a 'CUn' constraint to type @t@ if the name @x@ is in assumptions @as@.
+--
+-- This is used for cases when we're introducing @x@ in a new context.
+-- If it doesn't get used (i.e. it is not in @as@), it needs to be unrestricted!
 wkn :: Name -> Type -> A.Assumption Type -> [Constraint]
 wkn x t as | x `A.notMember` as = [CUn BecauseWkn t]
            | otherwise          = []
@@ -233,7 +236,7 @@ unrestricted = fmap (CUn BecauseUn) . A.values
 
 -- | Creates a fresh function with some juicy constraints!
 --
--- Note: this requires expr only to have better diagnostics!
+-- Note: this requires expr only in order to have better diagnostics!
 freshFun :: Expr -> Infer (Type, [Constraint])
 freshFun expr = do
   f <- freshType arrowKind
@@ -269,7 +272,6 @@ infer expr = case expr of
 
     (f, fPreds) <- freshFun expr -- this is the arrow kind
     let as'   = as `A.remove` x
-    -- TODO: this is a bit of a hack, it should be just 'as' but that produces wrong results. this should really be checked!
 
     let preds = because (BecauseExpr expr) <$> nub (leq f as' <> wkn x tv as)
 
@@ -307,7 +309,7 @@ infer expr = case expr of
     tv             <- freshType StarKind
     let preds = nub $ unrestricted (as1 `A.intersection` as2) <> wkn x tv as2 -- Q in paper
     pure
-      ( (as1 <> as2) `A.remove` x
+      ( as1 <> as2 `A.remove` x
       , t2
       , cs1
       <> cs2

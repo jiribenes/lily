@@ -22,6 +22,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import           Debug.Trace                    ( traceShow )
+import Debug.Trace.Pretty 
 
 import           Control.Monad.Fresh
 import           Name
@@ -93,9 +94,6 @@ fromPred r (IsIn n ts) = CIn r n ts
 -- | Takes a class environment, constraint being simplified,
 -- rest of constraints for context and returns new contexts being created from the simplified context
 simplify :: ClassEnv -> Constraint -> [Constraint] -> [Constraint]
--- ^ this could also return Maybe and then use `catMaybes`
--- TODO: we should verify that 'f' is indeed a function (there exists a 'CIn "Fun" [f]' in here
--- TODO: check that these rules actually make sense!
 simplify env (CGeq r other (f `TAp` _ `TAp` _)) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) other f]
 simplify env (CGeq r (f `TAp` _ `TAp` _) other) cs
@@ -116,7 +114,13 @@ findConstraint _   _  _            = False
 -- then we definitively throw the 'Un t' constraint away
 -- since we're not learning anything new!
 simplifyGeq :: (Constraint -> Bool) -> Constraint -> [Constraint]
-simplifyGeq p c@(CGeq r a _) | p (CUn r a) = traceShow ("deleting", pretty c) []
+simplifyGeq p c@(CGeq r a b) | p (CUn r a) = traceShow ("deleting", pretty c) []
+
+-- Follows from entailment rule:
+-- |
+-- |----------------
+-- | a >= linArrow
+-- |
 simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow =
   traceShow ("deleting", pretty c) []
 simplifyGeq _ c = [c]
@@ -148,23 +152,18 @@ solve' (CEq r t1 t2, cs) = do
   (sub2, unsolved) <- solve (sub1 `apply` cs)
   pure (sub2 `compose` sub1, (sub2 `compose` sub1) `apply` unsolved)
 solve' (CImpInst r t1 monos t2, cs) = do
+  -- Note: We're not doing Morris' improving substitution here,
+  -- but we should do it at the end! 
+  -- TODO 
+  -- Currently this is in Type.Simplify which gets run only on already finished, generalized types
   let t2' = generalize cs monos t2
   solve (CExpInst (Generalized r) t1 t2' : cs)
 solve' (CExpInst r t s, cs) = do
-  -- [ this doesn't work! it discards a lot of the information we need! ]  
-  -- (s' , unsolved ) <- instantiate s
-  -- (sub, unsolved') <- solve (CEq t s' : cs)
-  -- return $ traceShow ("created-sub: ", sub) (sub, unsolved ++ unsolved')
   (s' , preds   ) <- instantiate s
   (sub, unsolved) <- solve $ CEq (Instantiated r) t s' : preds <> cs
   pure (sub, unsolved)
-{-solve' (CCtor _ n t, cs) = do
-  env <- view ctorEnv
-  case M.lookup n env of
-    Nothing   -> throwError $ ConstructorNotFound n
-    Just ctor -> solve (CExpInst t ctor : cs)-}
 solve' (CIn{}, _) =
-  error "This should never happen, such a constraint is impossible!"
+  error "This should never happen, such a constraint is unsolvable and shouldn't get to `solve'`!"
 
 addReason :: Reason -> Except UnificationError a -> Solve a
 addReason r x = case runExcept x of
@@ -176,7 +175,6 @@ solvable (CEq{}     , _) = True
 solvable (CExpInst{}, _) = True
 solvable (CImpInst _ _ monos t2, cs) =
   S.null $ (ftv t2 `S.difference` monos) `S.intersection` atv cs
---solvable (CCtor{}, _) = True
 solvable (CIn{}, _) = False
 
 -- this is probably very inefficient, but eh
@@ -198,15 +196,11 @@ instantiate (Forall xs qt) = do
 
   pure (t, fromPred BecauseInstantiate <$> preds)
 
--- TODO: This function is a bit incorrect, see below
 generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
 generalize unsolved free t = Forall (S.toList tyVars) (preds :=> t)
  where
   tyVars = ftv t `S.difference` free
   preds  = toPreds $ nub unsolved
-  -- preds  = filter (\(IsIn _ xs) -> any (`isIn` tyVars) xs) (toPreds unsolved) -- This for example discharges any (Un $ConcreteType) even when it's really not true! That's a real problem! TODO TODO TODO
-  -- isIn (TVar x) xs = x `S.member` xs
-  -- isIn _        _  = False
 
 freshType :: MonadFresh Name m => Kind -> m Type
 freshType kind = do
