@@ -25,7 +25,7 @@ simplifyScheme (Forall tvs qt@(preds :=> _)) =
 
 substFunctionVar :: S.Set Pred -> TVar -> Subst
 substFunctionVar preds tv
-  -- | typeKind f
+  -- -| typeKind f
   --  == arrowKind
   --  && filterRelevant f preds
   --  == S.fromList [PFun f]

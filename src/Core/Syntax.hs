@@ -46,6 +46,7 @@ data BuiltinExpr = BuiltinBinOp BinOp Type Type
                  | BuiltinUnOp UnOp Type Type
                  | BuiltinMemberRef
                  | BuiltinNew Type
+                 | BuiltinNewArray Type
                  | BuiltinArraySubscript Type Type
                  | BuiltinUnit
                  | BuiltinNullPtr
@@ -68,6 +69,7 @@ instance Pretty BuiltinExpr where
       <>  PP.parens (pretty opType)
   pretty BuiltinMemberRef = "#builtin_memberref"
   pretty (BuiltinNew typ) = "#builtin_new" <+> "@" <> PP.parens (pretty typ)
+  pretty (BuiltinNewArray typ) = "#builtin_new_array" <+> "@" <> PP.parens (pretty typ)
   pretty (BuiltinArraySubscript arrayTyp subscriptTyp) =
     "#builtin_arrsubscript"
       <+> "@"

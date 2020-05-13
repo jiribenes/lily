@@ -438,13 +438,17 @@ infer expr = case expr of
       let somePointer = typePtrOf someA
 
       pure (A.empty, tv, [CEq (BecauseExpr expr) tv somePointer])
-    BuiltinNew typ -> do
+    BuiltinNewArray typ -> do
       tv         <- freshType StarKind
       resultType <- freshType StarKind
 
       let f = makeFn2 tv resultType
 
       pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
+    BuiltinNew typ -> do
+      resultType <- freshType StarKind
+
+      pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])  
 
 -- | This is the top-level function that should be used for inferring a type of something
 inferTop :: InferEnv -> [TopLevel] -> Either InferError InferEnv
