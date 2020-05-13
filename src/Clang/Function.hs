@@ -31,7 +31,8 @@ import           Control.Lens
 import           Data.ByteString.Char8          ( ByteString )
 import           Data.Function                  ( on )
 import qualified Data.Graph                    as G
-import           Data.List                      ( groupBy
+import           Data.List                      ( nub
+                                                , groupBy
                                                 , sortOn
                                                 )
 import           Data.Maybe                     ( fromJust )
@@ -86,20 +87,24 @@ toSomeFunction c =
     <|> (SomeFunctionTemplate <$> toFunctionTemplate c)
     <|> (SomeConstructor <$> toConstructor c)
 
+combineFolds :: Eq b => Fold a b -> Fold a b -> Fold a b
+combineFolds f g = folding (\x -> nub $ (x ^.. f) <> (x ^.. g))
+
 calledFunctions :: Fold Cursor SomeFunctionCursor
-calledFunctions = cursorDescendantsF . referencedCtorCalls . functionDecls
- where 
+calledFunctions =
+  cursorDescendantsF
+    . combineFolds referencedCalls referencedCtorCalls
+    . functionDecls
+ where
   referencedCalls :: Fold Cursor Cursor
-  referencedCalls =
-    folding (T.matchKind @ 'DeclRefExpr) . folding
-      (fmap cursorCanonical . cursorReferenced . T.withoutKind)
+  referencedCalls = folding (T.matchKind @ 'DeclRefExpr)
+    . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
   -- this is in fact necessary and sufficient because we have to reference previously declared functions,
   -- but they can also be just references to a function pointer instead of a 'CallExpr'
 
   referencedCtorCalls :: Fold Cursor Cursor
-  referencedCtorCalls =
-    folding (T.matchKind @ 'CallExpr) . folding
-      (fmap cursorCanonical . cursorReferenced . T.withoutKind)
+  referencedCtorCalls = folding (T.matchKind @ 'CallExpr)
+    . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
 
   functionDecls :: Fold Cursor SomeFunctionCursor
   functionDecls = folding toSomeFunction
