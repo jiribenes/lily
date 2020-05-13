@@ -32,7 +32,8 @@ import           Control.Lens
 import           Control.Monad.Except
 import           Control.Monad.RWS
 import           Control.Monad.Reader
-import           Control.Monad.State
+import qualified Control.Monad.State.Strict as StrictS
+import qualified Control.Monad.State.Lazy as LazyS
 import           Control.Monad.Trans.Maybe
 import           Control.Monad.Writer
 import           Data.Kind                      ( Type )
@@ -53,15 +54,15 @@ initialFreshState = FreshState
   }
 
 -- | Monad transformer for `FreshState`
-newtype FreshT n (m :: Type -> Type) a = FreshT { unFreshT :: StateT (FreshState n) m a }
-    deriving newtype (Functor, Applicative, Monad, MonadTrans, MonadPlus, Alternative, MonadReader r, MonadWriter w, MonadState (FreshState n), MonadIO)
+newtype FreshT n (m :: Type -> Type) a = FreshT { unFreshT :: StrictS.StateT (FreshState n) m a }
+    deriving newtype (Functor, Applicative, Monad, MonadTrans, MonadPlus, Alternative, MonadReader r, MonadState (FreshState n), MonadWriter w, MonadIO)
 
 evalFreshT :: Monad m => FreshT n m a -> FreshState n -> m a
-evalFreshT = evalStateT . unFreshT
+evalFreshT = StrictS.evalStateT . unFreshT
 {-# INLINE evalFreshT #-}
 
 runFreshT :: FreshT n m a -> FreshState n -> m (a, FreshState n)
-runFreshT = runStateT . unFreshT
+runFreshT = StrictS.runStateT . unFreshT
 {-# INLINE runFreshT #-}
 
 -- | Monad for getting a supply of fresh identifiers `n`
@@ -107,7 +108,8 @@ instance Monad m => MonadFresh n (FreshT n m) where
 
 -- automatically derived transformer boilerplate
 instance MonadFresh n m => MonadFresh n (MaybeT m)
-instance MonadFresh n m => MonadFresh n (StateT s m)
+instance MonadFresh n m => MonadFresh n (StrictS.StateT s m)
+instance MonadFresh n m => MonadFresh n (LazyS.StateT s m)
 instance MonadFresh n m => MonadFresh n (ReaderT r m)
 instance (Monoid w, MonadFresh n m) => MonadFresh n (WriterT w m)
 instance (Monoid w, MonadFresh n m) => MonadFresh n (RWST r w s m)
