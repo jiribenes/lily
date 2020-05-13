@@ -7,7 +7,9 @@ where
 import qualified Data.ByteString.Char8         as BS
 import           Data.Functor                   ( (<&>) )
 import           Debug.Trace                    ( traceShow )
-import           Language.C.Clang.Type          ( typeCanonicalType
+import           Language.C.Clang.Type          ( typeResultType
+                                                , typeArgTypes
+                                                , typeCanonicalType
                                                 , typePointeeType
                                                 , typeSpelling
                                                 )
@@ -42,12 +44,23 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     let name = nameFromBS $ typeSpelling canonicalClangType
     let tc   = TC name StarKind -- TODO: get kind from clang
     pure (TCon tc)
+  ClangType.LValueReference -> do
+    typePointeeType canonicalClangType >>= fromClangType <&> MutRef
+  ClangType.FunctionProto -> do
+    clangArgTypes <- typeArgTypes canonicalClangType
+    resultType    <- fromClangType =<< typeResultType canonicalClangType
 
-  other -> error $ unlines
-    [ "internal error: Encountered unknown Clang type (no conversion available!)"
-    , "\t\tName:\t\t\t" <> BS.unpack (typeSpelling clangType)
-    , "\t\tCanonical type name:\t"
-      <> BS.unpack (typeSpelling canonicalClangType)
-    , "\t\tKind:\t\t\t'" <> show other <> "'"
-    ]
+    argTypes      <- traverse fromClangType clangArgTypes
+
+    pure $ foldr (\x acc -> typeArrow `TAp` x `TAp` acc) resultType argTypes
+  other -> traceShow
+    (unlines
+      [ "internal error: Encountered unknown Clang type (no conversion available!)"
+      , "\t\tName:\t\t\t" <> BS.unpack (typeSpelling clangType)
+      , "\t\tCanonical type name:\t"
+        <> BS.unpack (typeSpelling canonicalClangType)
+      , "\t\tKind:\t\t\t'" <> show other <> "'"
+      ]
+    )
+    Nothing
   where canonicalClangType = typeCanonicalType clangType
