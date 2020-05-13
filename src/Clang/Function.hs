@@ -17,6 +17,8 @@ module Clang.Function
   , toFunction
   , FunctionTemplateCursor
   , toFunctionTemplate
+  , ConstructorCursor
+  , toConstructor
   , SomeFunctionCursor(..)
   , someSpelling
   , someUSR
@@ -39,9 +41,11 @@ import qualified Language.C.Clang.Cursor.Typed as T
 
 type FunctionCursor = T.CursorK 'FunctionDecl
 type FunctionTemplateCursor = T.CursorK 'FunctionTemplate
+type ConstructorCursor = T.CursorK 'Constructor
 
 data SomeFunctionCursor = SomeFunction FunctionCursor
                         | SomeFunctionTemplate FunctionTemplateCursor
+                        | SomeConstructor ConstructorCursor
     deriving stock (Eq, Show)
 
 makePrisms ''SomeFunctionCursor
@@ -49,6 +53,7 @@ makePrisms ''SomeFunctionCursor
 unwrapSomeFunction :: SomeFunctionCursor -> Cursor
 unwrapSomeFunction (SomeFunction         f ) = T.withoutKind f
 unwrapSomeFunction (SomeFunctionTemplate ft) = T.withoutKind ft
+unwrapSomeFunction (SomeConstructor      c ) = T.withoutKind c
 
 someUSR :: SomeFunctionCursor -> ByteString
 someUSR = cursorUSR . unwrapSomeFunction
@@ -72,20 +77,29 @@ toFunction = T.matchKind @ 'FunctionDecl
 toFunctionTemplate :: Cursor -> Maybe FunctionTemplateCursor
 toFunctionTemplate = T.matchKind @ 'FunctionTemplate
 
+toConstructor :: Cursor -> Maybe ConstructorCursor
+toConstructor = T.matchKind @ 'Constructor
+
 toSomeFunction :: Cursor -> Maybe SomeFunctionCursor
 toSomeFunction c =
   (SomeFunction <$> toFunction c)
     <|> (SomeFunctionTemplate <$> toFunctionTemplate c)
+    <|> (SomeConstructor <$> toConstructor c)
 
 calledFunctions :: Fold Cursor SomeFunctionCursor
-calledFunctions = referencedCalls . functionDecls
- where
+calledFunctions = cursorDescendantsF . referencedCtorCalls . functionDecls
+ where 
   referencedCalls :: Fold Cursor Cursor
   referencedCalls =
-    cursorDescendantsF . folding (T.matchKind @ 'DeclRefExpr) . folding
+    folding (T.matchKind @ 'DeclRefExpr) . folding
       (fmap cursorCanonical . cursorReferenced . T.withoutKind)
   -- this is in fact necessary and sufficient because we have to reference previously declared functions,
   -- but they can also be just references to a function pointer instead of a 'CallExpr'
+
+  referencedCtorCalls :: Fold Cursor Cursor
+  referencedCtorCalls =
+    folding (T.matchKind @ 'CallExpr) . folding
+      (fmap cursorCanonical . cursorReferenced . T.withoutKind)
 
   functionDecls :: Fold Cursor SomeFunctionCursor
   functionDecls = folding toSomeFunction

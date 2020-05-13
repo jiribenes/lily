@@ -48,6 +48,7 @@ data BuiltinExpr = BuiltinBinOp BinOp Type Type
                  | BuiltinNew Type
                  | BuiltinNewArray Type
                  | BuiltinArraySubscript Type Type
+                 | BuiltinSet
                  | BuiltinUnit
                  | BuiltinNullPtr
   deriving stock (Eq, Show, Ord)
@@ -71,6 +72,7 @@ instance Pretty BuiltinExpr where
   pretty (BuiltinNew typ) = "#builtin_new" <+> "@" <> PP.parens (pretty typ)
   pretty (BuiltinNewArray typ) =
     "#builtin_new_array" <+> "@" <> PP.parens (pretty typ)
+  pretty BuiltinSet = "#builtin_set" 
   pretty (BuiltinArraySubscript arrayTyp subscriptTyp) =
     "#builtin_arrsubscript"
       <+> "@"
@@ -80,13 +82,13 @@ instance Pretty BuiltinExpr where
   pretty BuiltinUnit    = "#builtin_unit"
   pretty BuiltinNullPtr = "#builtin_nullptr"
 
-type Expr = Expr' (Maybe Type) Cursor
+type Expr = Expr' Type Cursor
 type CursorExpr t = Expr' t Cursor
 
 data Let' t c = Let c Name (Expr' t c)
   deriving stock (Eq, Ord, Show, Functor)
 
-type Let = Let' (Maybe Type) Cursor
+type Let = Let' Type Cursor
 
 instance Pretty t => Pretty (Let' t Cursor) where
   pretty (Let _ name expr) =
@@ -98,32 +100,29 @@ data StructField' t c = StructField c t Name
 instance Pretty t => Pretty (StructField' t Cursor) where
   pretty (StructField _ t n) = pretty n <+> "::" <+> pretty t
 
-type StructField = StructField' (Maybe Type) Cursor
+type StructField = StructField' Type Cursor
 
-data Struct' t c = Struct c Name [StructField' t c]
+data Struct' t c = Struct c t Name [StructField' t c] -- t ~ TCon
   deriving stock (Eq, Ord, Show, Functor)
 
-type Struct = Struct' (Maybe Type) Cursor
+type Struct = Struct' Type Cursor
 
 instance Pretty t => Pretty (Struct' t Cursor) where
-  pretty (Struct _ name s) = "struct" <+> pretty name <+> "=" <+> PP.align
+  pretty (Struct _ _ name s) = "struct" <+> pretty name <+> "=" <+> PP.align
     (PP.encloseSep PP.lbrace PP.rbrace PP.comma $ pretty <$> s)
 
 data TopLevel' t c = TLLet (Let' t c)
                    | TLLetRecursive (NonEmpty (Let' t c))
-                   | TLLetNoBody c Name
                    | TLStruct (Struct' t c)
   deriving stock (Eq, Ord, Show, Functor)
 makePrisms ''TopLevel'
 
-type TopLevel = TopLevel' (Maybe Type) Cursor
+type TopLevel = TopLevel' Type Cursor
 
 instance Pretty t => Pretty (TopLevel' t Cursor) where
   pretty (TLLet l) = pretty l
   pretty (TLLetRecursive ls) =
     "rec" <+> PP.align (PP.vsep $ NE.toList $ pretty <$> ls)
-  pretty (TLLetNoBody _ name) =
-    PP.enclose "(*" "*)" $ "predeclared:" <+> "let" <+> pretty name
   pretty (TLStruct s) = pretty s
 
 instance Pretty t => Pretty (Expr' t Cursor) where
@@ -182,13 +181,12 @@ instance HasCursor TopLevel where
     getter = \case
       TLLet          l        -> view cursorL l
       TLLetRecursive (l :| _) -> view cursorL l
-      TLLetNoBody c _         -> c
       TLStruct s              -> view cursorL s
     setter :: TopLevel -> Cursor -> TopLevel
     setter c newCursor = c $> newCursor
 
 instance HasCursor (Struct' t Cursor) where
-  cursorL = lens (\(Struct c _ _) -> c) ($>)
+  cursorL = lens (\(Struct c _ _ _) -> c) ($>)
 
 unit :: Cursor -> Expr
 unit c = Builtin c BuiltinUnit

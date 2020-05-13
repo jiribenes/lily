@@ -22,14 +22,13 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import           Debug.Trace                    ( traceShow )
-import Debug.Trace.Pretty 
 
 import           Control.Monad.Fresh
 import           Name
 import           Type.Constraint
 import           Type.Type
 import           Type.Unify
-
+import qualified Type.Class as C
 
 data SolveError = SolveError Reason UnificationError -- for now, anyways...
 
@@ -39,52 +38,12 @@ instance Pretty SolveError where
 
 type Solve a = ReaderT SolveEnv (FreshT Name (Except SolveError)) a
 
-type ClassEnv = S.Set Pred
-type CtorEnv = M.Map Name Scheme
-data SolveEnv = SolveEnv { _classEnv :: ClassEnv, _ctorEnv :: CtorEnv } deriving stock (Show, Ord, Eq)
-makeLenses ''SolveEnv
+data SolveEnv = SolveEnv { _classEnv :: C.ClassEnv }
+makeClassy ''SolveEnv
 
 runSolveT
-  :: FreshState Name -> Solve a -> Either SolveError (a, FreshState Name)
-runSolveT freshSt m = runExcept $ runFreshT (runReaderT m mkSolveEnv) freshSt
-
-mkSolveEnv :: SolveEnv
-mkSolveEnv = SolveEnv { _classEnv = mkClassEnv, _ctorEnv = mkCtorEnv }
- where
-  mkClassEnv = S.fromList
-    [ PNum typeInt
-    , PUn typeChar
-    , PUn typeInt
-    , PUn typeBool
-    , PUn typeUnArrow
-    , PFun typeArrow
-    , PFun typeLinArrow
-    , PFun typeUnArrow
-    ]
-  mkCtorEnv = M.fromList [("Pair", pairCtor), ("Pointed", pointedCtor)]
-
-pairCtor :: Scheme
-pairCtor = Forall
-  [aVar, bVar]
-  (   []
-  :=> (     typeArrow
-      `TAp` a
-      `TAp` (typeUnArrow `TAp` b `TAp` (pairType `TAp` a `TAp` b))
-      )
-  )
- where
-  (aVar, bVar) = (TV "a" StarKind, TV "b" StarKind)
-  (a   , b   ) = (TVar aVar, TVar bVar)
-  pairType     = TCon (TC "Pair" arrowKind)
-
-pointedCtor :: Scheme
-pointedCtor = Forall
-  [aVar]
-  ([] :=> (typeUnArrow `TAp` a `TAp` (pointedType `TAp` a)))
- where
-  (aVar, bVar) = (TV "a" StarKind, TV "b" StarKind)
-  (a   , b   ) = (TVar aVar, TVar bVar)
-  pointedType  = TCon (TC "Pointed" (ArrowKind StarKind StarKind))
+  :: C.ClassEnv -> FreshState Name -> Solve a -> Either SolveError (a, FreshState Name)
+runSolveT ce freshSt m = runExcept $ runFreshT (runReaderT m (SolveEnv ce)) freshSt
 
 toPreds :: [Constraint] -> [Pred]
 toPreds cs = [ IsIn n ts | CIn _ n ts <- cs ]
@@ -93,21 +52,21 @@ fromPred r (IsIn n ts) = CIn r n ts
 
 -- | Takes a class environment, constraint being simplified,
 -- rest of constraints for context and returns new contexts being created from the simplified context
-simplify :: ClassEnv -> Constraint -> [Constraint] -> [Constraint]
+simplify :: C.ClassEnv -> Constraint -> [Constraint] -> [Constraint]
 simplify env (CGeq r other (f `TAp` _ `TAp` _)) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) other f]
 simplify env (CGeq r (f `TAp` _ `TAp` _) other) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) f other]
 simplify env c@(CIn _ n ts) cs
-  | IsIn n ts `S.member` env = []
+  | IsIn n ts `C.inEnv` env = []
   | otherwise                = simplifyGeq (findConstraint env cs) c
 simplify _ c _ = [c]
 
 -- | Find the given constraint either among the other constraints or in the 'ClassEnv'
-findConstraint :: ClassEnv -> [Constraint] -> Constraint -> Bool
+findConstraint :: C.ClassEnv -> [Constraint] -> Constraint -> Bool
 findConstraint env (c : cs) x | c == x    = True
                               | otherwise = findConstraint env cs x
-findConstraint env [] (CIn _ n ts) = IsIn n ts `S.member` env
+findConstraint env [] (CIn _ n ts) = IsIn n ts `C.inEnv` env
 findConstraint _   _  _            = False
 
 -- | If we see constraint of type (Un t, t >= u),
@@ -122,7 +81,7 @@ simplifyGeq p c@(CGeq r a b) | p (CUn r a) = traceShow ("deleting", pretty c) []
 -- | a >= linArrow
 -- |
 simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow =
-  traceShow ("deleting", pretty c) []
+  traceShow ("deleting", pretty c) []   
 simplifyGeq _ c = [c]
 
 -- | Simplifies constraints until a fix-point is reached
@@ -130,9 +89,9 @@ simplifyGeq _ c = [c]
 -- 
 -- TODO: This should ideally also have a counter so
 -- we can't loop infinitely (but we really shouldn't!)
-simplifyMany :: ClassEnv -> [Constraint] -> [Constraint]
+simplifyMany :: C.ClassEnv -> [Constraint] -> [Constraint]
 simplifyMany e cs | cs == cs' = cs
-                  | otherwise = simplifyMany e cs'
+                  | otherwise = simplifyMany e cs' --TODO: simplification is disabled for the time-being
   where
     cs' = chooseOne cs >>= uncurry (simplify e)
 
