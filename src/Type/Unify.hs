@@ -15,6 +15,8 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 import           Type.Type
 import           Name
 
+import           Debug.Trace.Pretty
+
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
                       | KindMismatch Type Type
@@ -53,7 +55,29 @@ unifies (TCon c1) (TCon c2) | c1 == c2 = pure emptySubst
 unifies (TVar tv)   t                  = tv `bind` t
 unifies t           (TVar tv  )        = tv `bind` t
 unifies (TAp t1 t2) (TAp t3 t4)        = unifyMany [t1, t2] [t3, t4]
-unifies t1          t2                 = throwError $ UnificationFail t1 t2
+-- these rules are special for mutable references
+-- we should fix it up to say something like
+--
+--   MR t1        t2
+--   ---------------
+--     t2 := MR t1
+-- 
+-- so that it propagates
+unifies a@(MutRef t1) t2 | tracePretty (a, t2) True =
+  wrapIn MutRef $ t1 `unifies` t2
+unifies t1 b@(MutRef t2) | tracePretty (t1, b) True =
+  wrapIn MutRef $ t1 `unifies` t2
+
+-- TODO: solve multiple layers of mutable references
+-- how do we solve that properly? (mutable reborrows)
+
+-- catch-all clause
+unifies t1 t2 = throwError $ UnificationFail t1 t2
+
+wrapIn :: MonadError UnificationError m => (Type -> Type) -> m Subst -> m Subst
+wrapIn f s = do
+  Subst m <- s
+  pure $ Subst $ M.map f m
 
 occursCheck :: FreeTypeVars a => TVar -> a -> Bool
 occursCheck tv t = tv `S.member` ftv t
