@@ -132,7 +132,7 @@ instance Pretty t => Pretty (Expr' t Cursor) where
   pretty (App _ e1   e2      ) = pretty e1 <+> pretty e2
   pretty (Lam _ name expr    ) = "\\" <> pretty name <+> "->" <+> pretty expr
   pretty (LetIn _ name e1 e2) =
-    "let" <+> pretty name <+> "=" <+> pretty e1 <+> "in" <+> pretty e2
+    PP.align (PP.sep ["let" <+> pretty name <+> "=" <+> pretty e1, "in" <+> pretty e2])
   pretty (If _ cond thn els) = "if" <+> PP.align
     (PP.vsep [pretty cond, "then" <+> pretty thn, "else" <+> pretty els])
   pretty (Literal c t) =
