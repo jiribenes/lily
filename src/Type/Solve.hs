@@ -38,7 +38,7 @@ instance Pretty SolveError where
 
 type Solve a = ReaderT SolveEnv (FreshT Name (Except SolveError)) a
 
-data SolveEnv = SolveEnv { _classEnv :: C.ClassEnv }
+data SolveEnv = SolveEnv { _classEnv :: C.ClassEnv}
 makeClassy ''SolveEnv
 
 runSolveT
@@ -57,16 +57,19 @@ simplify env (CGeq r other (f `TAp` _ `TAp` _)) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) other f]
 simplify env (CGeq r (f `TAp` _ `TAp` _) other) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) f other]
-simplify env c@(CIn _ n ts) cs
-  | IsIn n ts `C.inEnv` env = []
-  | otherwise                = simplifyGeq (findConstraint env cs) c
+simplify env c@(CIn _ n ts) cs = case C.substPred env $ IsIn n ts of
+    Nothing -> simplifyGeq (findConstraint env cs) c
+    Just (Subst s) -> case M.toList s of
+      [] -> []
+      [(a, v)] -> [CEq BecauseFunDep (TVar a) v]
+      _ -> error "impossible"
 simplify _ c _ = [c]
 
 -- | Find the given constraint either among the other constraints or in the 'ClassEnv'
 findConstraint :: C.ClassEnv -> [Constraint] -> Constraint -> Bool
 findConstraint env (c : cs) x | c == x    = True
                               | otherwise = findConstraint env cs x
-findConstraint env [] (CIn _ n ts) = IsIn n ts `C.inEnv` env
+findConstraint env [] (CIn _ n ts) = IsIn n ts `C.member` env
 findConstraint _   _  _            = False
 
 -- | If we see constraint of type (Un t, t >= u),
@@ -76,12 +79,20 @@ simplifyGeq :: (Constraint -> Bool) -> Constraint -> [Constraint]
 simplifyGeq p c@(CGeq r a b) | p (CUn r a) = traceShow ("deleting", pretty c) []
 
 -- Follows from entailment rule:
+-- | Fun b, NOT (Un b), a ~ linArrow
+-- |-------------------------------
+-- |      b ~ unArrow
+-- |
+simplifyGeq p c@(CGeq r a b) | not (p (CUn r b)) && p (CFun r b) && p (CFun r a) && a == typeLinArrow =
+  traceShow ("replacing", pretty c) ([CEq r b typeLinArrow] :: [Constraint])
+
+-- Follows from entailment rule:
 -- |
 -- |----------------
 -- | a >= linArrow
 -- |
-simplifyGeq p c@(CGeq r a _) | p (CFun r a) && a == typeLinArrow =
-  traceShow ("deleting", pretty c) []   
+simplifyGeq p c@(CGeq r _ b) | p (CFun r b) && b == typeLinArrow =
+  traceShow ("deleting", pretty c) []
 simplifyGeq _ c = [c]
 
 -- | Simplifies constraints until a fix-point is reached
@@ -119,7 +130,7 @@ solve' (CImpInst r t1 monos t2, cs) = do
   solve (CExpInst (Generalized r) t1 t2' : cs)
 solve' (CExpInst r t s, cs) = do
   (s' , preds   ) <- instantiate s
-  (sub, unsolved) <- solve $ CEq (Instantiated r) t s' : preds <> cs
+  (sub, unsolved) <- solve $ CEq (Instantiated s s' r) t s' : preds <> cs
   pure (sub, unsolved)
 solve' (CIn{}, _) =
   error "This should never happen, such a constraint is unsolvable and shouldn't get to `solve'`!"
@@ -133,7 +144,7 @@ solvable :: (Constraint, [Constraint]) -> Bool
 solvable (CEq{}     , _) = True
 solvable (CExpInst{}, _) = True
 solvable (CImpInst _ _ monos t2, cs) =
-  S.null $ (ftv t2 `S.difference` monos) `S.intersection` atv cs
+  S.null $ (ftv t2 `S.difference` ftv monos) `S.intersection` atv cs
 solvable (CIn{}, _) = False
 
 -- this is probably very inefficient, but eh
@@ -155,10 +166,10 @@ instantiate (Forall xs qt) = do
 
   pure (t, fromPred BecauseInstantiate <$> preds)
 
-generalize :: [Constraint] -> S.Set TVar -> Type -> Scheme
+generalize :: [Constraint] -> S.Set Type -> Type -> Scheme
 generalize unsolved free t = Forall (S.toList tyVars) (preds :=> t)
  where
-  tyVars = ftv t `S.difference` free
+  tyVars = ftv t `S.difference` ftv free
   preds  = toPreds $ nub unsolved
 
 freshType :: MonadFresh Name m => Kind -> m Type

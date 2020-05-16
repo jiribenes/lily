@@ -24,8 +24,13 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 )
 
 import           Clang.OpParser
+import           Clang.Function                 ( ConstructorCursor )
 import           Name
-import           Type.Type                      ( Type )
+import           Type.Type                      ( TCon(TC)
+                                                , TCon
+                                                , Type
+                                                )
+import           Data.List                      ( find )
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
@@ -44,43 +49,43 @@ data Expr' t c = Var c Name
 
 data BuiltinExpr = BuiltinBinOp BinOp Type Type
                  | BuiltinUnOp UnOp Type Type
-                 | BuiltinMemberRef
+                 | BuiltinMemberRef Type  -- modelled after 'GHC.Records.HasField'
                  | BuiltinNew Type
                  | BuiltinNewArray Type
                  | BuiltinArraySubscript Type Type
-                 | BuiltinSet
+                 | BuiltinAssign
                  | BuiltinUnit
                  | BuiltinNullPtr
+                 | BuiltinThis Type
   deriving stock (Eq, Show, Ord)
 
 instance Pretty BuiltinExpr where
   pretty (BuiltinBinOp bop resultType opType) =
     "#builtin_binop_"
       <>  pretty (drop (length ("BinOp" :: String)) (show bop))
-      <+> "@"
-      <>  PP.parens (pretty resultType)
-      <+> "@"
-      <>  PP.parens (pretty opType)
+      <+> prettyTypeApplication resultType
+      <+> prettyTypeApplication opType
   pretty (BuiltinUnOp uop resultType opType) =
     "#builtin_unop_"
       <>  pretty (drop (length ("UnOp" :: String)) (show uop))
-      <+> "@"
-      <>  PP.parens (pretty resultType)
-      <+> "@"
-      <>  PP.parens (pretty opType)
-  pretty BuiltinMemberRef = "#builtin_memberref"
-  pretty (BuiltinNew typ) = "#builtin_new" <+> "@" <> PP.parens (pretty typ)
+      <+> prettyTypeApplication resultType
+      <+> prettyTypeApplication opType
+  pretty (BuiltinMemberRef fieldNameType) =
+    "#builtin_memberref" <+> prettyTypeApplication fieldNameType
+  pretty (BuiltinNew typ) = "#builtin_new" <+> prettyTypeApplication typ
   pretty (BuiltinNewArray typ) =
-    "#builtin_new_array" <+> "@" <> PP.parens (pretty typ)
-  pretty BuiltinSet = "#builtin_set" 
+    "#builtin_new_array" <+> prettyTypeApplication typ
+  pretty BuiltinAssign = "#builtin_assign"
   pretty (BuiltinArraySubscript arrayTyp subscriptTyp) =
     "#builtin_arrsubscript"
-      <+> "@"
-      <>  PP.parens (pretty arrayTyp)
-      <+> "@"
-      <>  PP.parens (pretty subscriptTyp)
-  pretty BuiltinUnit    = "#builtin_unit"
-  pretty BuiltinNullPtr = "#builtin_nullptr"
+      <+> prettyTypeApplication arrayTyp
+      <+> prettyTypeApplication subscriptTyp
+  pretty BuiltinUnit       = "#builtin_unit"
+  pretty BuiltinNullPtr    = "#builtin_nullptr"
+  pretty (BuiltinThis typ) = "#builtin_this" <+> prettyTypeApplication typ
+
+prettyTypeApplication :: Pretty a => a -> PP.Doc ann
+prettyTypeApplication typ = "@" <> PP.parens (pretty typ)
 
 type Expr = Expr' Type Cursor
 type CursorExpr t = Expr' t Cursor
@@ -102,19 +107,24 @@ instance Pretty t => Pretty (StructField' t Cursor) where
 
 type StructField = StructField' Type Cursor
 
-data Struct' t c = Struct c t Name [StructField' t c] -- t ~ TCon
-  deriving stock (Eq, Ord, Show, Functor)
+data Struct' t c = Struct c t Name [StructField' t c] [ConstructorCursor] -- t ~ TCon
+  deriving stock (Eq, Show, Functor)
 
 type Struct = Struct' Type Cursor
 
 instance Pretty t => Pretty (Struct' t Cursor) where
-  pretty (Struct _ _ name s) = "struct" <+> pretty name <+> "=" <+> PP.align
+  pretty (Struct _ _ name s _) = "struct" <+> pretty name <+> "=" <+> PP.align
     (PP.encloseSep PP.lbrace PP.rbrace PP.comma $ pretty <$> s)
+
+findField :: Name -> Struct' t c -> Maybe (StructField' t c)
+findField n (Struct _ _ _ fields _) = find (isThisYourFieldName n) fields
+ where
+  isThisYourFieldName name (StructField _ _ fieldName) = name == fieldName
 
 data TopLevel' t c = TLLet (Let' t c)
                    | TLLetRecursive (NonEmpty (Let' t c))
                    | TLStruct (Struct' t c)
-  deriving stock (Eq, Ord, Show, Functor)
+  deriving stock (Eq, Show, Functor)
 makePrisms ''TopLevel'
 
 type TopLevel = TopLevel' Type Cursor
@@ -130,8 +140,8 @@ instance Pretty t => Pretty (Expr' t Cursor) where
   pretty (App _ e1   e2@App{}) = pretty e1 <+> PP.parens (pretty e2)
   pretty (App _ e1   e2      ) = pretty e1 <+> pretty e2
   pretty (Lam _ name expr    ) = "\\" <> pretty name <+> "->" <+> pretty expr
-  pretty (LetIn _ name e1 e2) =
-    PP.align (PP.sep ["let" <+> pretty name <+> "=" <+> pretty e1, "in" <+> pretty e2])
+  pretty (LetIn _ name e1 e2 ) = PP.align
+    (PP.sep ["let" <+> pretty name <+> "=" <+> pretty e1, "in" <+> pretty e2])
   pretty (If _ cond thn els) = "if" <+> PP.align
     (PP.vsep [pretty cond, "then" <+> pretty thn, "else" <+> pretty els])
   pretty (Literal c t) =
@@ -181,12 +191,12 @@ instance HasCursor TopLevel where
     getter = \case
       TLLet          l        -> view cursorL l
       TLLetRecursive (l :| _) -> view cursorL l
-      TLStruct s              -> view cursorL s
+      TLStruct       s        -> view cursorL s
     setter :: TopLevel -> Cursor -> TopLevel
     setter c newCursor = c $> newCursor
 
 instance HasCursor (Struct' t Cursor) where
-  cursorL = lens (\(Struct c _ _ _) -> c) ($>)
+  cursorL = lens (\(Struct c _ _ _ _) -> c) ($>)
 
 unit :: Cursor -> Expr
 unit c = Builtin c BuiltinUnit

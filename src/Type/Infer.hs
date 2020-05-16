@@ -15,7 +15,7 @@ module Type.Infer where
 import           Control.Lens
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           Data.Foldable                  ( Foldable(fold) )
+import           Data.Foldable                  (traverse_,  Foldable(fold) )
 import           Data.List                      ( nub )
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
@@ -26,7 +26,7 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import           Data.Traversable               ( for )
-import           Language.C.Clang.Cursor        ( CursorKind )
+import           Language.C.Clang.Cursor        (Cursor,  CursorKind )
 import           Data.Maybe                     ( catMaybes )
 
 import           Clang.OpParser
@@ -42,14 +42,9 @@ import           Type.Type
 import qualified Type.Class as C
 
 import Control.Monad.State.Strict
-import Debug.Trace (trace)
+import Debug.Trace (traceShowM, trace)
 import Debug.Trace.Pretty
-
-newtype InferEnv = InferEnv { _typeEnv :: M.Map Name Scheme }
-  deriving stock (Eq, Show)
-  deriving newtype (Semigroup, Monoid)
-
-makeLenses ''InferEnv
+import Data.List.NonEmpty (NonEmpty)
 
 -- | Monomorphic variable set
 type InferMonos = S.Set TVar
@@ -83,8 +78,14 @@ instance Pretty InferError where
     -- show (Ambiguous cs) = unlines ["Cannot match expected type: " <> show a <> " with actual type: " <> show b  | (a, b) <- cs]
     -- show (WrongKind a b) = "Wrong kind!"
 
-newtype InferState = InferState { _classEnv :: C.ClassEnv }
+data InferState = InferState { _classEnv :: C.ClassEnv, _typeEnv :: M.Map Name Scheme }
 makeClassy ''InferState
+
+initialInferState :: InferState
+initialInferState = InferState C.initialClassEnv $ M.singleton "move" $ Forall [varA] $ [] :=> LinArrow a a
+    where
+        varA = TV "a" StarKind
+        a = TVar varA
 
 -- | Infer monad allows to: read monomorphic variables, create fresh variables and raise errors
 newtype Infer a = Infer { unInfer :: ReaderT InferMonos (StateT InferState (FreshT Name (Except InferError))) a }
@@ -95,7 +96,7 @@ runInfer :: Infer a -> Either InferError a
 runInfer m = m
            & unInfer
            & flip runReaderT S.empty
-           & flip evalStateT (InferState C.initialClassEnv)
+           & flip evalStateT initialInferState
            & flip evalFreshT initialFreshState
            & runExcept
 
@@ -114,35 +115,37 @@ runSolve cs = do
       setFresh newFresh
       pure result
 
--- | Infer type schemes for a 'TopLevel' declaration.
-inferTopLevel :: InferEnv -> TopLevel -> Either InferError (M.Map Name Scheme)
-inferTopLevel env tl = runInfer (inferAndCloseOver env tl) 
+-- | Infer type schemes for a 'TopLevel' declaration and store it in 'InferState'
+inferTopLevel :: TopLevel -> Infer ()
+inferTopLevel tl = do
+    m <- traverse (\(subst, preds, ty) -> closeOver (subst `apply` preds) (subst `apply` ty)) =<< inferType tl
+    typeEnv <>= m
 
-inferAndCloseOver :: InferEnv -> TopLevel -> Infer (M.Map Name Scheme)
-inferAndCloseOver env tl = do
-    m <- inferType env tl
-    traverse
-      (\(subst, preds, ty) -> closeOver (subst `apply` preds) (subst `apply` ty))
-      m
-
+-- | This is the top-level function that should be used for inferring a type of something
+inferTop :: [TopLevel] -> Either InferError InferState
+inferTop tls = runInfer $ traverse_ inferTopLevel tls *> get
 
 -- | Infer a 'Subst'itution, list of 'Pred'icates and a 'Type' for a 'TopLevel' declaration
-inferType :: InferEnv -> TopLevel -> Infer (M.Map Name (Subst, [Pred], Type))
-inferType env = \case
-  TLStruct _                 -> pure $ mempty
+inferType :: TopLevel -> Infer (M.Map Name (Subst, [Pred], Type))
+inferType = \case
+  TLStruct s -> do
+    classEnv . C.instances %= C.updateInstances (C.hasFieldForStruct s)
+    pure mempty
   TLLet    (Let _ name expr) -> do
     (as, t, cs) <- infer expr
-
-    let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
+  
+    boundNames <- use (typeEnv . to M.keysSet)
+    let unbounds = A.keysSet as `S.difference` boundNames
 
     -- if we still have some free unknown variables which are 
     -- in `as` but not in `env` by this point, we need to report them as an error
     unless (S.null unbounds) $ throwError $ UnboundVariables (S.toList unbounds)
 
     -- pair known assumptions to environment types
+    env <- use (typeEnv . to M.toList)
     let cs' =
-          [ CExpInst (PairedAssumption x t) t s
-          | (x, s) <- env ^. typeEnv . to M.toList
+          [ CExpInst (PairedAssumption x t s) t s
+          | (x, s) <- env
           , t      <- x `A.lookup` as
           ]
 
@@ -150,8 +153,8 @@ inferType env = \case
     let prettify x =
             show (x & pretty, x ^. reasonL & pretty, t & pretty)
     let go cs =
-            runSolve $ trace
-              (unlines $ prettify <$> (cs <> cs'))
+            runSolve $ {-trace
+              (unlines $ prettify <$> (cs <> cs'))-}
                        cs <> cs'
     (subst, unsolved) <- go $ cs <> cs'
 
@@ -174,7 +177,8 @@ inferType env = \case
     (ass, ts, css) <- unzip3 <$> traverse infer exprs
     let as = fold ass <> recursiveAssumptions
 
-    let unbounds = A.keysSet as `S.difference` (env ^. typeEnv . to M.keysSet)
+    boundNames <- use (typeEnv . to M.keysSet)
+    let unbounds = A.keysSet as `S.difference` boundNames
     let unboundsExceptRecursive = unbounds `S.difference` S.fromList names
 
     -- if we still have some free unknown variables which are 
@@ -183,11 +187,13 @@ inferType env = \case
       (S.toList unbounds)
 
     -- pair known assumptions to environment types
+    env <- use (typeEnv . to M.toList)
     let cs' =
-          [ CExpInst (PairedAssumption x t) t s
-          | (x, s) <- env ^. typeEnv . to M.toList
+          [ CExpInst (PairedAssumption x t s) t s
+          | (x, s) <- env
           , t      <- x `A.lookup` as
           ]
+
 
     -- solve all constraints together and get the resulting substitution
     solverResults <- do
@@ -338,7 +344,7 @@ infer expr = case expr of
       , t2
       , cs1
       <> cs2
-      <> [ CImpInst (BecauseExpr expr) t' monos t1 | t' <- A.lookup x as2 ]
+      <> [ CImpInst (BecauseExpr expr) t' (TVar `S.map` monos) t1 | t' <- A.lookup x as2 ]
       <> [ CEq (BecauseExpr expr) tv t' | t' <- A.lookup x as2 ] -- This is for the wkn condition, as we need a new type variable
       <> preds
       )
@@ -356,7 +362,10 @@ infer expr = case expr of
       <> [CEq (BecauseExpr expr) t1 typeBool, CEq (BecauseExpr expr) t2 t3]
       )
 
-  Builtin cursor b -> case b of
+  Builtin cursor b -> inferBuiltin expr cursor b
+
+inferBuiltin :: Expr -> Cursor -> BuiltinExpr -> Infer (A.Assumption Type, Type, [Constraint])
+inferBuiltin expr cursor = \case
     BuiltinBinOp bo resultTyp opTyp -> case bo of
       -- TODO: scrap the boilerplate, use resultTyp and opTyp directly!
       BinOpEQ -> do
@@ -436,7 +445,12 @@ infer expr = case expr of
 
         pure (A.empty, f, [CEq (BecauseExpr expr) tv resultType])
       other -> error $ "not implemented yet: " <> show other
-    BuiltinMemberRef -> error "not implemented yet"
+    BuiltinMemberRef fieldNameType -> do
+      recordType <- S.freshType StarKind
+      memberType <- S.freshType StarKind
+
+      let f = UnArrow recordType memberType
+      pure (A.empty, f, [CHasField (BecauseExpr expr) fieldNameType recordType memberType])
     BuiltinArraySubscript clangArrayTyp clangSubscriptTyp -> do
       array     <- S.freshType (ArrowKind StarKind StarKind)
       arrayElem <- S.freshType StarKind
@@ -474,23 +488,17 @@ infer expr = case expr of
       resultType <- S.freshType StarKind
 
       pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])
-    BuiltinSet -> do
+    BuiltinAssign -> do
       tv <- S.freshType StarKind
-
-      let settee = MutRef tv
 
       (f, fPreds)    <- freshFun expr
 
-      let result = makeArrow settee f $ makeArrow tv typeLinArrow typeUnit
+      let result = makeArrow tv typeLinArrow $ makeArrow tv f typeUnit
 
-      pure (A.empty, result, fPreds) 
+      pure (A.empty, result, fPreds <> [CGeq (BecauseExpr expr) tv f])
+    BuiltinThis typ -> pure (A.empty, typ, [])
+    
 
--- | This is the top-level function that should be used for inferring a type of something
-inferTop :: InferEnv -> [TopLevel] -> Either InferError InferEnv
-inferTop env []         = Right env
-inferTop env (tl : tls) = case inferTopLevel env tl of
-  Left  err -> Left err
-  Right m   -> inferTop (env & typeEnv <>~ m) tls
 
 -- | Attempt to convert the type scheme into a normal(ish) format  
 normalize :: C.ClassEnv -> Scheme -> Scheme
@@ -517,7 +525,7 @@ normalize env (Forall origVars (origPreds :=> origBody)) = Forall
     Nothing -> error "tv not in signature"
 
   normpreds :: S.Set Pred -> [Pred]
-  normpreds ps = S.toList $ S.filter (\p -> not $ p `C.inEnv` env) ps
+  normpreds ps = S.toList $ S.filter (\p -> not $ p `C.member` env) ps
 
   isPredRelevant :: Pred -> Bool
   isPredRelevant (IsIn _ ts) = null (filter (\t -> t `M.notMember` sub) tyVars) -- check if we haven't lost _any_!

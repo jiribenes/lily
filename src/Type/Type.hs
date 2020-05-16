@@ -37,6 +37,7 @@ instance Pretty TCon where
 data Type = TVar TVar
           | TCon TCon
           | TAp Type Type
+          | TSymbol Name
           deriving stock (Eq, Show, Ord)
 
 instance Pretty Type where
@@ -53,6 +54,7 @@ prettyType ps = \case
     prettyLeft a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
   TAp a@TAp{} b -> PP.parens (prettyType ps a) <+> prettyType ps b
   TAp a       b -> prettyType ps a <+> prettyType ps b
+  TSymbol n -> PP.squote <> PP.dquotes (pretty n)
  where
   prettyLeft a = maybeParenArrow isFunction a (prettyType ps a)
   isFunction f = PFun f `S.member` ps
@@ -63,11 +65,13 @@ prettyType ps = \case
 -- | Kind is the type of type
 -- needed for type constructors
 data Kind = StarKind
+          | SymbolKind
           | ArrowKind Kind Kind
           deriving stock (Eq, Show, Ord)
 
 instance PP.Pretty Kind where
   pretty StarKind = "Type"
+  pretty SymbolKind = "Symbol"
   pretty (ArrowKind a@ArrowKind{} b) =
     PP.parens (pretty a) <+> "->" <+> pretty b
   pretty (ArrowKind a b) = pretty a <+> "->" <+> pretty b
@@ -129,6 +133,8 @@ pattern PUn :: Type -> Pred
 pattern PUn x <- IsIn "Un" [x] where PUn x = IsIn "Un" [x]
 pattern PGeq :: Type -> Type -> Pred
 pattern PGeq x y <- IsIn "Geq" [x, y] where PGeq x y = IsIn "Geq" [x, y]
+pattern PHasField :: Type -> Type -> Type -> Pred
+pattern PHasField x r a <- IsIn "HasField" [x, r, a] where PHasField x r a = IsIn "HasField" [x, r, a]
 
 pattern LinArrow :: Type -> Type -> Type
 pattern LinArrow a b <- (extractSpecificArrow (== conLinArrow) -> Just (a, b)) 
@@ -211,16 +217,21 @@ compose :: Subst -> Subst -> Subst
 class Substitutable a where
   apply :: Subst -> a -> a
 
+{-
 instance Substitutable TVar where
-  apply (Subst s) a = tv
+  apply sub@(Subst s) a = tv
    where
     t         = TVar a
-    (TVar tv) = M.findWithDefault t a s -- this is fine by construction!
+    tv        = case M.findWithDefault t a s of -- this is fine by construction!
+                  (TVar tv') -> tv'
+                  other  -> error $ "Wrong substitution for a TVar!\n" <> "Originally: " <> show (pretty t) <> ", aka: " <> show (pretty a) <> ", subst: " <> show (pretty sub) <> ".\n" <> "Got: " <> show (pretty other) 
+-}
 
 instance Substitutable Type where
   apply _         con@TCon{}       = con
   apply (Subst s) tv@(TVar x     ) = M.findWithDefault tv x s
   apply s         (   t1 `TAp` t2) = apply s t1 `TAp` apply s t2
+  apply _         sym@TSymbol{}    = sym
 
 instance Substitutable Pred where
   apply s (IsIn x t) = IsIn x (apply s t)
@@ -252,6 +263,7 @@ instance FreeTypeVars Type where
   ftv TCon{}        = S.empty
   ftv (TVar x     ) = S.singleton x
   ftv (t1 `TAp` t2) = ftv t1 `S.union` ftv t2
+  ftv TSymbol{}     = S.empty
 
 instance FreeTypeVars TVar where
   ftv = S.singleton
@@ -289,6 +301,7 @@ typeKind (TVar (TV _ k)) = k
 typeKind (TAp a _      ) = case typeKind a of
   ArrowKind _ k -> k
   k             -> k
+typeKind TSymbol{} = SymbolKind  
 
 -- | Filter relevant predicates to given type
 filterRelevant :: Type -> S.Set Pred -> S.Set Pred

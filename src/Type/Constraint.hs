@@ -12,6 +12,7 @@ module Type.Constraint
   , pattern CFun
   , pattern CUn
   , pattern CGeq
+  , pattern CHasField
   )
 where
 
@@ -30,16 +31,17 @@ import           Name
 import           Type.Type
 
 data Reason = BecauseExpr Expr
-            | PairedAssumption Name Type
+            | PairedAssumption Name Type Scheme
             | Simplified Reason
             | Generalized Reason
-            | Instantiated Reason
+            | Instantiated Scheme Type Reason
             | BecauseCloseOver
             | BecauseInstantiate
             | BecauseFun
             | BecauseWkn
             | BecauseUn
             | BecauseLeq
+            | BecauseFunDep
             | FromClang Type Expr
             | CombinedReason Reason Reason
             deriving stock (Eq, Show)
@@ -47,17 +49,18 @@ data Reason = BecauseExpr Expr
 instance Pretty Reason where
   pretty (BecauseExpr expr) =
     "from expression at" <+> prettyLocation (loc expr)
-  pretty (PairedAssumption n t) =
-    "from generalizing an assumption that:" <+> pretty n <+> "::" <+> pretty t
+  pretty (PairedAssumption n t s) =
+    "from generalizing an assumption that:" <+> pretty n <+> "::" <+> pretty t <+> "~>" <+> pretty s
   pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
   pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
-  pretty (Instantiated r) = "from instantiation of:" <+> PP.indent 4 (pretty r)
+  pretty (Instantiated s t r) = "from instantiation of:" <+> PP.align (PP.sep ["from instantiating scheme:" <+> pretty s, "into type:" <+> pretty t, PP.indent 4 $ pretty r])
   pretty BecauseCloseOver     = "from closing over a type"
   pretty BecauseInstantiate   = "from instantiation of a predicate"
   pretty BecauseWkn           = "from a [Wkn] rule"
   pretty BecauseUn            = "from a [Un] rule"
   pretty BecauseLeq           = "from a [Leq] rule"
   pretty BecauseFun           = "from a [Fun] rule"
+  pretty BecauseFunDep        = "from a functional dependency"
   pretty (FromClang typ expr) = PP.align $ PP.sep
     [ "from Clang got type:" <+> pretty typ
     , PP.indent 4 $ "of expression at" <+> prettyLocation (loc expr)
@@ -70,7 +73,7 @@ because r' c = c & reasonL %~ (\r -> CombinedReason r r')
 
 data Constraint = CEq Reason Type Type
                 | CExpInst Reason Type Scheme
-                | CImpInst Reason Type (S.Set TVar) Type
+                | CImpInst Reason Type (S.Set Type) Type
 --                | CCtor Reason Name Type -- new addition: `is constructor of`
                 | CIn Reason Name (NonEmpty Type)
                 deriving stock (Show)
@@ -134,3 +137,5 @@ pattern CUn :: Reason -> Type -> Constraint
 pattern CUn r x <- CIn r "Un" [x] where CUn r x = CIn r "Un" [x]
 pattern CGeq :: Reason -> Type -> Type -> Constraint
 pattern CGeq r x y <- CIn r "Geq" [x, y] where CGeq r x y = CIn r "Geq" [x, y]
+pattern CHasField :: Reason -> Type -> Type -> Type -> Constraint
+pattern CHasField reason x r a <- CIn reason "HasField" [x, r, a] where CHasField reason x r a = CIn reason "HasField" [x, r, a]

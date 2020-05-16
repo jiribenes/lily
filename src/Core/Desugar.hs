@@ -6,6 +6,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
 
 module Core.Desugar
   ( desugarTopLevelFunction
@@ -27,7 +28,9 @@ import qualified Data.List.NonEmpty            as NE
 import           Data.Maybe                     ( isJust
                                                 , fromJust
                                                 )
-import           Debug.Trace                    ( traceM )
+import           Debug.Trace                    ( traceShowM
+                                                , traceM
+                                                )
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
 
@@ -45,22 +48,93 @@ import           Type.Type                      ( Kind(..)
                                                 , TCon(..)
                                                 , Type(..)
                                                 )
+import           Data.List                      ( find )
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
 
-
-data DesugarError = WeirdFunctionBody
-                  | UnknownBinaryOperation
-                  | UnknownUnaryOperation
-                  | UnknownDeclarationKindInBlock
-                  | BlockExpected Location
-                  | InvalidIfShape
-                  | ExpectedValidType
-                  | NotImplementedYet
-                  | DesugarWeirdness -- this is a catch-all TODO: replace by appropriate use!
+data DesugarError = WeirdFunctionBody Location
+                  | UnknownBinaryOperation Location
+                  | UnknownUnaryOperation Location
+                  | UnknownDeclarationKindInBlock Location
+                  | InvalidIfShape Location
+                  | ExpectedValidType Location
+                  | NotImplementedYet Location
+                  | ExpectedValidStruct Location
+                  | WeirdNewOperator Location
+                  | ExpectedReferencedExpr Location
+                  | ExpectedThis Location
+                  | DesugarWeirdness Location -- this is a catch-all TODO: replace by appropriate use!
     deriving stock (Show, Eq)
 
-newtype DesugarEnv = DesugarEnv { _allStructs :: [Struct] }
+instance Pretty DesugarError where
+  pretty = \case
+    WeirdFunctionBody l -> PP.align
+      (PP.sep
+        [ "Function body has a weird shape! Expected exactly one 'CompoundStmt'!"
+        , "Location: " <+> prettyLocation l
+        ]
+      )
+    UnknownBinaryOperation l ->
+      "Unknown binary operation at: " <+> prettyLocation l
+    UnknownUnaryOperation l ->
+      "Unknown unary operation at: " <+> prettyLocation l
+    UnknownDeclarationKindInBlock l ->
+      "Unknown declaration kind in block at: " <+> prettyLocation l
+    InvalidIfShape l -> PP.align
+      (PP.sep
+        [ "If statement has a weird shape! Expected: " <+> PP.align
+          (PP.sep
+            [ "EITHER `if <something> then <something>`"
+            , "    OR `if <something> then <something> else <something>`"
+            ]
+          )
+        , "Location: " <+> prettyLocation l
+        ]
+      )
+    ExpectedValidType l ->
+      "Expected a valid Clang type for expression at: " <+> prettyLocation l
+    NotImplementedYet l -> PP.align
+      (PP.sep
+        [ "TODO: Desugaring of this AST node is not implemented yet!"
+        , "Location: " <+> prettyLocation l
+        ]
+      )
+    ExpectedValidStruct l -> "Invalid struct at: " <+> prettyLocation l
+    WeirdNewOperator l ->
+      "Invalid form of the `new` operator at: " <+> prettyLocation l
+    ExpectedReferencedExpr l -> PP.align
+      (PP.sep
+        [ "Expected that expression is referencing another (possibly a function call?)"
+        , "Location: " <+> prettyLocation l
+        ]
+      )
+    ExpectedThis l -> PP.align
+      (PP.sep
+        [ "Found a member reference for a struct/class, but no specifier on LHS!"
+        , "Suggestion: Please add a `this->` to all member references/method calls!"
+        , "Location: " <+> prettyLocation l
+        ]
+      )
+    DesugarWeirdness l -> "Something weird at: " <+> prettyLocation l
+
+data DesugarEnv = DesugarEnv { _allStructs :: [Struct], _currentCtor :: Maybe ConstructorCursor }
   deriving stock (Eq, Show)
-  deriving newtype (Monoid, Semigroup)
+makeLenses ''DesugarEnv
+
+getCurrentStruct :: MonadDesugar m => m (Maybe Struct)
+getCurrentStruct = do
+  ctor <- view currentCtor
+  case ctor of
+    Nothing    -> pure Nothing
+    Just ctor' -> do
+      structs <- view allStructs
+
+      pure $ find (isThisYourCtor ctor') structs
+ where
+  isThisYourCtor :: ConstructorCursor -> Struct -> Bool
+  isThisYourCtor ctor (Struct _ _ _ _ ctors) = ctor `elem` ctors
 
 type MonadDesugar m = (MonadError DesugarError m, MonadReader DesugarEnv m)
 
@@ -75,7 +149,7 @@ desugarExpr cursor = case cursorKind cursor of
     resultTyp <- extractType cursor
     opTyp     <- extractType left
 
-    binOp     <- note UnknownBinaryOperation
+    binOp     <- note (UnknownBinaryOperation (loc cursor))
       $ parseBinOp (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
     let binOpBuiltin = Builtin cursor $ BuiltinBinOp binOp resultTyp opTyp
     pure $ App cursor (App cursor binOpBuiltin leftExpr) rightExpr
@@ -88,7 +162,7 @@ desugarExpr cursor = case cursorKind cursor of
     resultTyp <- extractType cursor
     opTyp     <- extractType child
 
-    unOp      <- note UnknownUnaryOperation
+    unOp      <- note (UnknownUnaryOperation (loc cursor))
       $ parseUnOp (fromJust $ T.matchKind @ 'UnaryOperator $ cursor)
     let unOpBuiltin = Builtin cursor $ BuiltinUnOp unOp resultTyp opTyp
 
@@ -107,7 +181,7 @@ desugarExpr cursor = case cursorKind cursor of
         pure $ Builtin cursor (BuiltinNew typ)
       xs -> do
         typ       <- extractType cursor
-        child     <- note DesugarWeirdness $ xs ^? _last
+        child     <- note (WeirdNewOperator $ loc cursor) $ xs ^? _last
 
         childExpr <- desugarExpr child
 
@@ -126,69 +200,61 @@ desugarExpr cursor = case cursorKind cursor of
           Builtin cursor $ BuiltinArraySubscript arrayTyp subscriptTyp
     pure $ App cursor (App cursor subscriptBuiltin leftExpr) rightExpr
 
+  Constructor -> do
+    referenced <- note (ExpectedReferencedExpr $ loc cursor)
+      $ cursorReferenced cursor
+
+    let name = nameFromBS $ cursorSpelling referenced
+    pure $ Var cursor name
+
   CallExpr -> do
-    exprs <- traverse desugarExpr $ cursorChildren cursor
+    case cursorChildren cursor of
+      [child]  -> desugarExpr child
+      children -> do
+        let (fn : args) = children
+        fnExpr <- case cursorKind fn of
+          DeclRefExpr -> desugarExpr fn
+          TypeRef     -> do
+            referenced <- note (ExpectedReferencedExpr $ loc fn)
+              $ cursorReferenced cursor
+            desugarExpr referenced
+          FirstExpr -> desugarExpr fn
+          other     -> do
+            traceShowM $ "Found: " <> show other
+            throwError (DesugarWeirdness $ loc fn)
+            -- hope that this is a constructor.
+        exprs <- traverse desugarExpr args
 
-    -- TODO: can we write this using Lens?
-    let exprs' = case exprs of
-          [] -> [unit cursor]
-          xs -> xs
+        -- TODO: can we write this using Lens?
+        let exprs' = case exprs of
+              [] -> [unit cursor]
+              xs -> xs
 
-    pure $ foldl1 (App cursor) exprs'
+        pure $ foldl (App cursor) fnExpr exprs'
 
-    {- TODO: this is needed for constructors
-
-      CallExpr -> do
-    let (fn : args) = cursorChildren cursor
-    exprs  <- traverse desugarExpr args
-
-    fnExpr <- case cursorKind fn of
-      DeclRefExpr -> desugarExpr fn
-      _           -> do
-        let Just ctor =
-              fn
-                ^? cursorDescendantsF
-                .   folding (T.matchKind @ 'CallExpr)
-                .   to T.withoutKind
-        referenced <- note DesugarWeirdness $ cursorReferenced ctor
-        case cursorKind referenced of
-          StructDecl -> do
-            traceShowM "found struct!"
-            traceShowM $ cursorUSR referenced
-            throwError DesugarWeirdness
-          other -> do
-            traceShowM $ "found " <> show other
-            traceShowM $ cursorSpelling referenced
-            traceShowM $ cursorUSR referenced
-            throwError DesugarWeirdness
-
-      other -> do
-        traceShowM other
-        throwError DesugarWeirdness
-
-
-    -- TODO: can we write this using Lens?
-    let exprs' = case exprs of
-          [] -> [unit cursor]
-          xs -> xs
-
-    pure $ foldl (App cursor) fnExpr exprs'
-    -}
+  CXXThisExpr -> do
+    ctor <- view currentCtor
+    case ctor of
+      Nothing -> throwError (DesugarWeirdness $ loc cursor)
+      Just _  -> do
+        (Struct _ t _ _ _) <- fromJust <$> getCurrentStruct
+        let this = Builtin cursor (BuiltinThis t)
+        pure this
 
   MemberRefExpr -> case cursorChildren cursor of
     [child] -> do
       expr <- desugarExpr child
-
-      let memberName = nameFromBS $ cursorSpelling cursor
-      let member     = Var cursor memberName
-
-      let memberRef  = Builtin cursor BuiltinMemberRef
-
-      pure $ App cursor (App cursor memberRef expr) member
+      let memberName       = nameFromBS $ cursorSpelling cursor
+      let memberSymbolType = TSymbol memberName
+      pure
+        $ App cursor (Builtin cursor (BuiltinMemberRef memberSymbolType)) expr
     [] -> do
-      traceM "I don't support weird member reference for C++ classes yet! TODO"
-      throwError NotImplementedYet
-    _ -> throwError DesugarWeirdness
+      -- this means that we're in some class currently
+      -- and we're using relative access.
+      -- 
+      -- probably.
+      -- it's hard to know for sure, let's just tell the user to annotate their functions with a 'this'!
+      throwError (ExpectedThis $ loc cursor)
 
   IntegerLiteral        -> desugarLiteral cursor
   CharacterLiteral      -> desugarLiteral cursor
@@ -203,42 +269,45 @@ desugarLiteral cursor = do
   typ <- extractType cursor
   pure $ Literal cursor typ
 
-desugarBlock :: MonadDesugar m => T.CursorK 'CompoundStmt -> m Expr
-desugarBlock cursor = do
+desugarBlock
+  :: MonadDesugar m => (Cursor -> Expr) -> T.CursorK 'CompoundStmt -> m Expr
+desugarBlock defaultResult cursor = do
   result <- longFunc
-  pure $ result $ unit (T.withoutKind cursor)
+  pure $ result $ defaultResult (T.withoutKind cursor)
  where
   go :: MonadDesugar m => (Expr -> Expr) -> Cursor -> m (Expr -> Expr)
   go cont c = do
-    resultFn <- desugarBlockOne c
+    resultFn <- desugarBlockOne defaultResult c
     pure $ cont . resultFn
 
   longFunc :: MonadDesugar m => m (Expr -> Expr)
   longFunc = foldlM go id $ T.cursorChildren cursor
 
-desugarStmt :: MonadDesugar m => Cursor -> m Expr
-desugarStmt cursor = case cursorKind cursor of
+desugarStmt :: MonadDesugar m => (Cursor -> Expr) -> Cursor -> m Expr
+desugarStmt defaultResult cursor = case cursorKind cursor of
   CompoundStmt ->
-    desugarBlock $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
+    desugarBlock defaultResult $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
   _ -> do
-    stmtCont <- desugarBlockOne cursor
-    pure $ stmtCont $ unit cursor
+    stmtCont <- desugarBlockOne defaultResult cursor
+    pure $ stmtCont (defaultResult cursor)
 
-desugarBlockOne :: MonadDesugar m => Cursor -> m (Expr -> Expr)
-desugarBlockOne cursor = case cursorKind cursor of
+desugarBlockOne
+  :: MonadDesugar m => (Cursor -> Expr) -> Cursor -> m (Expr -> Expr)
+desugarBlockOne defaultResult cursor = case cursorKind cursor of
   DeclStmt -> do
     let [child] = cursorChildren cursor
 
     case cursorKind child of
       VarDecl -> do
-        grandchild <- note DesugarWeirdness $ cursorChildren child ^? _last
+        grandchild <-
+          note (DesugarWeirdness $ loc child) $ cursorChildren child ^? _last
 
-        expr       <- desugarExpr grandchild
+        expr <- desugarExpr grandchild
 
         let name = nameFromBS $ cursorSpelling child
 
         pure $ \rest -> LetIn child name expr rest
-      _ -> throwError UnknownDeclarationKindInBlock
+      _ -> throwError (UnknownDeclarationKindInBlock $ loc child)
 
   ReturnStmt -> case cursorChildren cursor of
     [child] -> do
@@ -246,24 +315,24 @@ desugarBlockOne cursor = case cursorKind cursor of
 
       pure $ \_ -> expr
     [] -> pure $ \_ -> unit cursor
-    _  -> throwError DesugarWeirdness
+    _  -> throwError (DesugarWeirdness $ loc cursor)
 
   IfStmt -> case cursorChildren cursor of
     [cond, thn] -> do
       condition <- desugarExpr cond
-      expr      <- desugarStmt thn
+      expr      <- desugarStmt defaultResult thn
 
       pure $ \els -> If cursor condition expr els
 
     [cond, thn, els] -> do
       condition <- desugarExpr cond
 
-      expr1     <- desugarStmt thn
-      expr2     <- desugarStmt els
+      expr1     <- desugarStmt defaultResult thn
+      expr2     <- desugarStmt defaultResult els
 
       pure $ \_ -> If cursor condition expr1 expr2
 
-    _ -> throwError InvalidIfShape
+    _ -> throwError (InvalidIfShape $ loc cursor)
 
   CallExpr -> do
       -- TODO: should we force here that this has a void return value?
@@ -280,18 +349,19 @@ desugarBlockOne cursor = case cursorKind cursor of
   BinaryOperator -> do
     let [left, right] = cursorChildren cursor
 
-    binOp <- note UnknownBinaryOperation
+    binOp <- note (UnknownBinaryOperation $ loc cursor)
       $ parseBinOp (fromJust $ T.matchKind @ 'BinaryOperator $ cursor)
 
-    unless (isAssignOp binOp) $ throwError DesugarWeirdness
+    unless (isAssignOp binOp) $ throwError (NotImplementedYet $ loc cursor)
     unless (not $ isJust $ withoutAssign binOp)
       $ error "+= etc. not supported yet"
 
     leftExpr  <- desugarExpr left
     rightExpr <- desugarExpr right
 
-    let setter =
-          App cursor (App cursor (Builtin cursor BuiltinSet) leftExpr) rightExpr
+    let setter = App cursor
+                     (App cursor (Builtin cursor BuiltinAssign) leftExpr)
+                     rightExpr
 
     pure $ \rest -> LetIn cursor (Name "_") setter rest
 
@@ -312,9 +382,7 @@ desugarSingleChild cursor = do
   let [child] = cursorChildren cursor
   desugarExpr child
 
-desugarTopLevelFunction
-  :: MonadReader DesugarEnv m
-  => MonadDesugar m => SomeFunctionCursor -> m TopLevel
+desugarTopLevelFunction :: MonadDesugar m => SomeFunctionCursor -> m TopLevel
 desugarTopLevelFunction = \case
   SomeConstructor c -> desugarConstructor c
   cursor            -> do
@@ -334,16 +402,18 @@ desugarTopLevelFunction = \case
       [body] -> do
 
         functionHeader <- desugarParameters parameters
-        functionBody   <- desugarBlock body
+        functionBody   <- desugarBlock unit body
 
         let function = functionHeader functionBody
 
         pure $ TLLet $ Let untypedCursor name function
-      _ -> throwError WeirdFunctionBody
+      _ -> throwError (WeirdFunctionBody $ loc cursor)
 
--- TODO: Add constructor specialties if needed
+withConstructor :: MonadDesugar m => ConstructorCursor -> (m a -> m a)
+withConstructor c f = locally currentCtor (const $ Just c) $ f
+
 desugarConstructor :: MonadDesugar m => ConstructorCursor -> m TopLevel
-desugarConstructor cursor = do
+desugarConstructor cursor = withConstructor cursor $ do
   -- these are typically the first children but I really want to be safe here 
   let parameterF :: Fold Cursor (T.CursorK 'ParmDecl)
       parameterF = cursorChildrenF . folding (T.matchKind @ 'ParmDecl)
@@ -356,16 +426,23 @@ desugarConstructor cursor = do
   let parameters    = untypedCursor ^.. parameterF
   let name          = nameFromBS $ cursorSpelling untypedCursor
 
+  env <- view currentCtor
+  traceShowM env
+
+  maybeStruct        <- getCurrentStruct
+  (Struct _ t _ _ _) <- note (ExpectedValidStruct $ loc cursor) maybeStruct
+  let returnInstance c = Builtin c (BuiltinThis t)
+
   case untypedCursor ^.. bodyF of
     [body] -> do
 
       functionHeader <- desugarParameters parameters
-      functionBody   <- desugarBlock body
+      functionBody   <- desugarBlock returnInstance body
 
       let function = functionHeader functionBody
 
       pure $ TLLet $ Let untypedCursor name function
-    _ -> throwError WeirdFunctionBody
+    _ -> throwError (WeirdFunctionBody $ loc cursor)
 
 desugarParameters
   :: MonadReader DesugarEnv m
@@ -391,7 +468,7 @@ desugarSCCTopLevel (G.CyclicSCC  cursors) = do
   topLevelFunctions <- traverse desugarTopLevelFunction cursors
   let properFunctions = topLevelFunctions ^.. each . folding (preview _TLLet)
   case properFunctions of
-    [] -> throwError DesugarWeirdness
+    [] -> throwError (DesugarWeirdness $ loc (cursors ^?! _head))
     xs -> xs & NE.fromList & TLLetRecursive & pure
 
 desugarTopLevel
@@ -400,7 +477,7 @@ desugarTopLevel
   -> Either DesugarError [TopLevel]
 desugarTopLevel structs fnSccs = do
   desugaredStructs <- traverse desugarStruct structs
-  let desugarEnv = DesugarEnv desugaredStructs
+  let desugarEnv = DesugarEnv desugaredStructs Nothing
 
   tlFns <- traverse (flip runReaderT desugarEnv . desugarSCCTopLevel) fnSccs
   pure $ (TLStruct <$> desugaredStructs) <> tlFns
@@ -409,13 +486,16 @@ desugarStruct :: MonadError DesugarError m => StructCursor -> m Struct
 desugarStruct cursor = do
   let fields =
         cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'FieldDecl)
+  let constructors =
+        cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'Constructor)
   let name = nameFromBS $ T.cursorSpelling cursor
 
   desugaredFields <- traverse desugarField fields
 
-  let tcon   = TCon $ TC name StarKind
+  let tcon = TCon $ TC name StarKind
 
-  let struct = Struct (T.withoutKind cursor) tcon name desugaredFields
+  let struct =
+        Struct (T.withoutKind cursor) tcon name desugaredFields constructors
   pure struct
 
 desugarField
@@ -428,4 +508,5 @@ desugarField cursor = do
   pure $ StructField untypedCursor typ name
 
 extractType :: MonadError DesugarError m => Cursor -> m Type
-extractType c = note ExpectedValidType $ fromClangType =<< cursorType c
+extractType c =
+  note (ExpectedValidType $ loc c) $ fromClangType =<< cursorType c

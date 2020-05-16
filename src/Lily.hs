@@ -36,28 +36,22 @@ lily filepath = do
     Nothing -> exitFailure
 
   printAST tu
-  putStrLn "----------------------"
   let structs = C.structs tu
-  print structs
-
-  putStrLn "----------------------"
   let scc = recursiveComponents tu
-  print scc
 
   putStrLn "----------------------"
   scc' <- case desugarTopLevel structs scc of
     Left err -> do
       putStrLn "Desugaring failed!"
       putStrLn $ "Error: " <> show err
-      pure []
+      exitFailure
     Right xs -> do
       putDoc $ PP.align $ PP.vcat $ pretty <$> xs
       putStrLn ""
       pure xs
 
   putStrLn "----------------------"
-  let initialEnv = mempty
-  finalEnv <- case inferTop initialEnv scc' of
+  finalEnv <- case inferTop scc' of
     Left err -> do
       putStrLn "======================"
       putStrLn "Error happened during inference!"
@@ -65,7 +59,7 @@ lily filepath = do
       putDoc $ pretty err
       putStrLn ""
       putStrLn "======================"
-      pure mempty
+      exitFailure
     Right newEnv -> pure newEnv
 
   let prettyInferEnv = finalEnv ^. typeEnv . to M.toList & each %~ prettify
