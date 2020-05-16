@@ -1,7 +1,10 @@
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TypeApplications #-}
 
 module Core.Located
   ( Location(..)
@@ -21,6 +24,8 @@ import           Language.C.Clang.File
 import           Language.C.Clang.Location
 
 import           Core.Syntax
+import           Clang.Function
+import qualified Language.C.Clang.Cursor.Typed as T
 
 newtype Range = Range { unRange :: (Location, Location) }
     deriving stock (Show, Eq)
@@ -50,3 +55,15 @@ instance {-# OVERLAPPABLE #-} HasCursor a => Ranged a where -- this isn't really
    where
     sr :: SourceRange
     sr = a ^. cursorL . to (fromJust . cursorExtent)
+
+instance T.HasExtent k => Ranged (T.CursorK k) where
+  range c = range sr
+   where
+     sr :: SourceRange
+     sr = T.cursorExtent c
+
+instance Ranged SomeFunctionCursor where
+   range a = range sr
+    where
+      sr :: SourceRange
+      sr = fromJust $ cursorExtent $ unwrapSomeFunction a   
