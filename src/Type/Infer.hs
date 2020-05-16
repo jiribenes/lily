@@ -544,6 +544,7 @@ normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   normtype :: Type -> Type
   normtype (TAp a b)  = normtype a `TAp` normtype b
   normtype con@TCon{} = con
+  normtype sym@TSymbol{} = sym
   normtype (TVar a)   = case a `M.lookup` sub of
     Just x  -> TVar x
     Nothing -> error "tv not in signature"
