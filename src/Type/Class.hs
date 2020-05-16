@@ -33,9 +33,9 @@ import           Data.List                      ( find
                                                 , foldl'
                                                 )
 import           Debug.Trace.Pretty
-import qualified Data.Set as S
-import Control.Lens.Extras (is)
-import Data.Maybe (isJust)
+import qualified Data.Set                      as S
+import           Control.Lens.Extras            ( is )
+import           Data.Maybe                     ( isJust )
 
 -- Assumes that union of '_fdFrom' and '_fdTo' is all of the 'TVar's possible in 'ClassInfo'
 data FunDep = FunDep { _fdFrom :: [TVar], _fdTo :: [TVar] }
@@ -132,7 +132,7 @@ defaultInstances = M.fromList
   hasFieldInstances = []
 
 simpleInstance :: Pred -> ClassInstance
-simpleInstance result = ClassInstance [] {- [] -} result
+simpleInstance result = ClassInstance [] {- [] -}result
 
 data ClassEnv = ClassEnv { _classes :: !ClassInfoEnv, _instances :: !ClassInstanceEnv }
 makeLenses ''ClassEnv
@@ -183,16 +183,16 @@ substPred ce p@(IsIn n ts)
   insts = ce ^?! instances . ix n
 
   fitsInstance :: Pred -> ClassInstance -> Maybe Subst
-  fitsInstance p ci | p == ci ^. iResult = Just emptySubst
-                    | otherwise = case unifyPreds (ci ^. iResult) p of
-    Left  _   -> Nothing
-    Right s@(Subst sub) -> 
-      case cls ^. cFunDeps of
+  fitsInstance p ci
+    | p == ci ^. iResult = Just emptySubst
+    | otherwise = case unifyPreds (ci ^. iResult) p of
+      Left  _             -> Nothing
+      Right s@(Subst sub) -> case cls ^. cFunDeps of
         Nothing -> Nothing
         Just fd ->
-          let Subst nfSub = substToNormalForm ci in
-          let condition = M.keysSet nfSub == (S.fromList $ fd ^. fdFrom) in
-          if condition then Just s else Nothing
+          let Subst nfSub = substToNormalForm ci
+          in  let condition = M.keysSet nfSub == (S.fromList $ fd ^. fdFrom)
+              in  if condition then Just s else Nothing
 
   substToNormalForm ci = case unifyPreds (cls ^. cResult) p of
     Left err -> error $ "Wrong instance, couldn't unify!" <> show (pretty err)

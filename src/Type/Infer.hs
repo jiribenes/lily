@@ -15,7 +15,9 @@ module Type.Infer where
 import           Control.Lens
 import           Control.Monad.Except
 import           Control.Monad.Reader
-import           Data.Foldable                  (traverse_,  Foldable(fold) )
+import           Data.Foldable                  ( traverse_
+                                                , Foldable(fold)
+                                                )
 import           Data.List                      ( nub )
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
@@ -26,7 +28,9 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
 import           Data.Traversable               ( for )
-import           Language.C.Clang.Cursor        (Cursor,  CursorKind )
+import           Language.C.Clang.Cursor        ( Cursor
+                                                , CursorKind
+                                                )
 import           Data.Maybe                     ( catMaybes )
 
 import           Clang.OpParser
@@ -37,14 +41,16 @@ import           Name
 import qualified Type.Assumption               as A
 import           Type.Constraint
 import           Type.Simplify
-import qualified Type.Solve as S
+import qualified Type.Solve                    as S
 import           Type.Type
-import qualified Type.Class as C
+import qualified Type.Class                    as C
 
-import Control.Monad.State.Strict
-import Debug.Trace (traceShowM, trace)
-import Debug.Trace.Pretty
-import Data.List.NonEmpty (NonEmpty)
+import           Control.Monad.State.Strict
+import           Debug.Trace                    ( traceShowM
+                                                , trace
+                                                )
+import           Debug.Trace.Pretty
+import           Data.List.NonEmpty             ( NonEmpty )
 
 -- | Monomorphic variable set
 type InferMonos = S.Set TVar
@@ -82,10 +88,15 @@ data InferState = InferState { _classEnv :: C.ClassEnv, _typeEnv :: M.Map Name S
 makeClassy ''InferState
 
 initialInferState :: InferState
-initialInferState = InferState C.initialClassEnv $ M.singleton "move" $ Forall [varA] $ [] :=> LinArrow a a
-    where
-        varA = TV "a" StarKind
-        a = TVar varA
+initialInferState =
+  InferState C.initialClassEnv
+    $   M.singleton "move"
+    $   Forall [varA]
+    $   []
+    :=> LinArrow a a
+ where
+  varA = TV "a" StarKind
+  a    = TVar varA
 
 -- | Infer monad allows to: read monomorphic variables, create fresh variables and raise errors
 newtype Infer a = Infer { unInfer :: ReaderT InferMonos (StateT InferState (FreshT Name (Except InferError))) a }
@@ -93,12 +104,13 @@ newtype Infer a = Infer { unInfer :: ReaderT InferMonos (StateT InferState (Fres
 
 -- | Helper function to actually run the 'Infer' monad with sensible defaults.
 runInfer :: Infer a -> Either InferError a
-runInfer m = m
-           & unInfer
-           & flip runReaderT S.empty
-           & flip evalStateT initialInferState
-           & flip evalFreshT initialFreshState
-           & runExcept
+runInfer m =
+  m
+    & unInfer
+    & flip runReaderT S.empty
+    & flip evalStateT initialInferState
+    & flip evalFreshT initialFreshState
+    & runExcept
 
 -- | Take the accumulated constraints and run a solver over them
 -- 
@@ -107,7 +119,7 @@ runInfer m = m
 runSolve :: [Constraint] -> Infer (Subst, [Constraint])
 runSolve cs = do
   freshSt <- getFresh
-  env <- use classEnv
+  env     <- use classEnv
 
   case S.runSolveT env freshSt (S.solve cs) of
     Left  err                -> throwError $ FromSolve err
@@ -118,8 +130,13 @@ runSolve cs = do
 -- | Infer type schemes for a 'TopLevel' declaration and store it in 'InferState'
 inferTopLevel :: TopLevel -> Infer ()
 inferTopLevel tl = do
-    m <- traverse (\(subst, preds, ty) -> closeOver (subst `apply` preds) (subst `apply` ty)) =<< inferType tl
-    typeEnv <>= m
+  m <-
+    traverse
+        (\(subst, preds, ty) ->
+          closeOver (subst `apply` preds) (subst `apply` ty)
+        )
+      =<< inferType tl
+  typeEnv <>= m
 
 -- | This is the top-level function that should be used for inferring a type of something
 inferTop :: [TopLevel] -> Either InferError InferState
@@ -131,10 +148,10 @@ inferType = \case
   TLStruct s -> do
     classEnv . C.instances %= C.updateInstances (C.hasFieldForStruct s)
     pure mempty
-  TLLet    (Let _ name expr) -> do
+  TLLet (Let _ name expr) -> do
     (as, t, cs) <- infer expr
-  
-    boundNames <- use (typeEnv . to M.keysSet)
+
+    boundNames  <- use (typeEnv . to M.keysSet)
     let unbounds = A.keysSet as `S.difference` boundNames
 
     -- if we still have some free unknown variables which are 
@@ -150,12 +167,13 @@ inferType = \case
           ]
 
     -- solve all constraints together and get the resulting substitution
-    let prettify x =
-            show (x & pretty, x ^. reasonL & pretty, t & pretty)
+    let prettify x = show (x & pretty, x ^. reasonL & pretty, t & pretty)
     let go cs =
-            runSolve $ {-trace
+          runSolve
+            $ {-trace
               (unlines $ prettify <$> (cs <> cs'))-}
-                       cs <> cs'
+               cs
+            <> cs'
     (subst, unsolved) <- go $ cs <> cs'
 
     -- Ideally, do a difference between these lists, but that's too hard for now
@@ -178,7 +196,7 @@ inferType = \case
     let as = fold ass <> recursiveAssumptions
 
     boundNames <- use (typeEnv . to M.keysSet)
-    let unbounds = A.keysSet as `S.difference` boundNames
+    let unbounds                = A.keysSet as `S.difference` boundNames
     let unboundsExceptRecursive = unbounds `S.difference` S.fromList names
 
     -- if we still have some free unknown variables which are 
@@ -337,14 +355,18 @@ infer expr = case expr of
     (as2, t2, cs2) <- infer e2
     monos          <- ask
     tv             <- S.freshType StarKind
-    let preds = because (BecauseExpr expr) <$> (nub $ unrestricted (as1 `A.intersection` as2) <> wkn x t1 as2) -- Q in paper
+    let preds =
+          because (BecauseExpr expr)
+            <$> (nub $ unrestricted (as1 `A.intersection` as2) <> wkn x t1 as2) -- Q in paper
 
     pure
       ( as1 <> as2 `A.remove` x
       , t2
       , cs1
       <> cs2
-      <> [ CImpInst (BecauseExpr expr) t' (TVar `S.map` monos) t1 | t' <- A.lookup x as2 ]
+      <> [ CImpInst (BecauseExpr expr) t' (TVar `S.map` monos) t1
+         | t' <- A.lookup x as2
+         ]
       <> [ CEq (BecauseExpr expr) tv t' | t' <- A.lookup x as2 ] -- This is for the wkn condition, as we need a new type variable
       <> preds
       )
@@ -364,140 +386,142 @@ infer expr = case expr of
 
   Builtin cursor b -> inferBuiltin expr cursor b
 
-inferBuiltin :: Expr -> Cursor -> BuiltinExpr -> Infer (A.Assumption Type, Type, [Constraint])
+inferBuiltin
+  :: Expr
+  -> Cursor
+  -> BuiltinExpr
+  -> Infer (A.Assumption Type, Type, [Constraint])
 inferBuiltin expr cursor = \case
-    BuiltinBinOp bo resultTyp opTyp -> case bo of
-      -- TODO: scrap the boilerplate, use resultTyp and opTyp directly!
-      BinOpEQ -> do
-        tv1      <- S.freshType StarKind
-        tv2      <- S.freshType StarKind
-        resultTv <- S.freshType StarKind
+  BuiltinBinOp bo resultTyp opTyp -> case bo of
+    -- TODO: scrap the boilerplate, use resultTyp and opTyp directly!
+    BinOpEQ -> do
+      tv1      <- S.freshType StarKind
+      tv2      <- S.freshType StarKind
+      resultTv <- S.freshType StarKind
 
-        let f = makeFn3 tv1 tv2 resultTv
-
-        pure
-          ( A.empty
-          , f
-          , [ CEq (BecauseExpr expr) resultTv typeBool
-            , CEq (BecauseExpr expr) tv1      tv2
-            ]
-          )
-
-      BinOpAdd -> do -- TODO: B O I L E R P L A T E
-        tv1      <- S.freshType StarKind
-        tv2      <- S.freshType StarKind
-        resultTv <- S.freshType StarKind
-
-        let f = makeFn3 tv1 tv2 resultTv
-
-        pure
-          ( A.empty
-          , f
-          , [ CEq (BecauseExpr expr) resultTv tv1
-            , CEq (BecauseExpr expr) tv1      tv2
-            ]
-          )
-
-      BinOpSub -> do -- TODO: B O I L E R P L A T E
-        tv1      <- S.freshType StarKind
-        tv2      <- S.freshType StarKind
-        resultTv <- S.freshType StarKind
-
-        let f = makeFn3 tv1 tv2 resultTv
-
-        pure
-          ( A.empty
-          , f
-          , [ CEq (BecauseExpr expr) resultTv tv1
-            , CEq (BecauseExpr expr) tv1      tv2
-            ]
-          )
-
-      BinOpMul -> do
-        tv1      <- S.freshType StarKind
-        tv2      <- S.freshType StarKind
-        resultTv <- S.freshType StarKind
-
-        let f = makeFn3 tv1 tv2 resultTv
-
-        pure
-          ( A.empty
-          , f
-          , [ CEq (BecauseExpr expr) resultTv tv1
-            , CEq (BecauseExpr expr) tv1      tv2
-            ]
-          )
-
-      _ -> error "not implemented yet"
-    BuiltinUnOp uo resultTyp opTyp -> case uo of
-      -- TODO: scrap the boilerplate _for most!_, use resultTyp and opTyp directly!
-      UnOpAddrOf -> do
-        tv  <- S.freshType StarKind
-        tv' <- S.freshType StarKind
-        let resultType = typePtrOf tv'
-        let f          = makeFn2 tv resultType
-
-        pure (A.empty, f, [CEq (BecauseExpr expr) tv tv'])
-      UnOpDeref -> do
-        tv         <- S.freshType StarKind
-        resultType <- S.freshType StarKind
-        let f = makeFn2 (typePtrOf tv) resultType
-
-        pure (A.empty, f, [CEq (BecauseExpr expr) tv resultType])
-      other -> error $ "not implemented yet: " <> show other
-    BuiltinMemberRef fieldNameType -> do
-      recordType <- S.freshType StarKind
-      memberType <- S.freshType StarKind
-
-      let f = UnArrow recordType memberType
-      pure (A.empty, f, [CHasField (BecauseExpr expr) fieldNameType recordType memberType])
-    BuiltinArraySubscript clangArrayTyp clangSubscriptTyp -> do
-      array     <- S.freshType (ArrowKind StarKind StarKind)
-      arrayElem <- S.freshType StarKind
-      subscript <- S.freshType StarKind
-      result    <- S.freshType StarKind
-
-      let arrType = array `TAp` arrayElem
-
-      let f       = makeFn3 arrType subscript result
+      let f = makeFn3 tv1 tv2 resultTv
 
       pure
         ( A.empty
         , f
-        , [ CEq (FromClang clangArrayTyp expr)     clangArrayTyp     arrType
-          , CEq (BecauseExpr expr)                 result            arrayElem
-          , CEq (FromClang clangSubscriptTyp expr) clangSubscriptTyp subscript
+        , [ CEq (BecauseExpr expr) resultTv typeBool
+          , CEq (BecauseExpr expr) tv1      tv2
           ]
         )
-    BuiltinUnit    -> pure (A.empty, typeUnit, [])
-    BuiltinNullPtr -> do
-      tv    <- S.freshType StarKind
 
-      someA <- S.freshType StarKind
-      let somePointer = typePtrOf someA
+    BinOpAdd -> do -- TODO: B O I L E R P L A T E
+      tv1      <- S.freshType StarKind
+      tv2      <- S.freshType StarKind
+      resultTv <- S.freshType StarKind
 
-      pure (A.empty, tv, [CEq (BecauseExpr expr) tv somePointer])
-    BuiltinNewArray typ -> do
+      let f = makeFn3 tv1 tv2 resultTv
+
+      pure
+        ( A.empty
+        , f
+        , [CEq (BecauseExpr expr) resultTv tv1, CEq (BecauseExpr expr) tv1 tv2]
+        )
+
+    BinOpSub -> do -- TODO: B O I L E R P L A T E
+      tv1      <- S.freshType StarKind
+      tv2      <- S.freshType StarKind
+      resultTv <- S.freshType StarKind
+
+      let f = makeFn3 tv1 tv2 resultTv
+
+      pure
+        ( A.empty
+        , f
+        , [CEq (BecauseExpr expr) resultTv tv1, CEq (BecauseExpr expr) tv1 tv2]
+        )
+
+    BinOpMul -> do
+      tv1      <- S.freshType StarKind
+      tv2      <- S.freshType StarKind
+      resultTv <- S.freshType StarKind
+
+      let f = makeFn3 tv1 tv2 resultTv
+
+      pure
+        ( A.empty
+        , f
+        , [CEq (BecauseExpr expr) resultTv tv1, CEq (BecauseExpr expr) tv1 tv2]
+        )
+
+    _ -> error "not implemented yet"
+  BuiltinUnOp uo resultTyp opTyp -> case uo of
+    -- TODO: scrap the boilerplate _for most!_, use resultTyp and opTyp directly!
+    UnOpAddrOf -> do
+      tv  <- S.freshType StarKind
+      tv' <- S.freshType StarKind
+      let resultType = typePtrOf tv'
+      let f          = makeFn2 tv resultType
+
+      pure (A.empty, f, [CEq (BecauseExpr expr) tv tv'])
+    UnOpDeref -> do
       tv         <- S.freshType StarKind
       resultType <- S.freshType StarKind
+      let f = makeFn2 (typePtrOf tv) resultType
 
-      let f = makeFn2 tv resultType
+      pure (A.empty, f, [CEq (BecauseExpr expr) tv resultType])
+    other -> error $ "not implemented yet: " <> show other
+  BuiltinMemberRef fieldNameType -> do
+    recordType <- S.freshType StarKind
+    memberType <- S.freshType StarKind
 
-      pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
-    BuiltinNew typ -> do
-      resultType <- S.freshType StarKind
+    let f = UnArrow recordType memberType
+    pure
+      ( A.empty
+      , f
+      , [CHasField (BecauseExpr expr) fieldNameType recordType memberType]
+      )
+  BuiltinArraySubscript clangArrayTyp clangSubscriptTyp -> do
+    array     <- S.freshType (ArrowKind StarKind StarKind)
+    arrayElem <- S.freshType StarKind
+    subscript <- S.freshType StarKind
+    result    <- S.freshType StarKind
 
-      pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])
-    BuiltinAssign -> do
-      tv <- S.freshType StarKind
+    let arrType = array `TAp` arrayElem
 
-      (f, fPreds)    <- freshFun expr
+    let f       = makeFn3 arrType subscript result
 
-      let result = makeArrow tv typeLinArrow $ makeArrow tv f typeUnit
+    pure
+      ( A.empty
+      , f
+      , [ CEq (FromClang clangArrayTyp expr)     clangArrayTyp     arrType
+        , CEq (BecauseExpr expr)                 result            arrayElem
+        , CEq (FromClang clangSubscriptTyp expr) clangSubscriptTyp subscript
+        ]
+      )
+  BuiltinUnit    -> pure (A.empty, typeUnit, [])
+  BuiltinNullPtr -> do
+    tv    <- S.freshType StarKind
 
-      pure (A.empty, result, fPreds <> [CGeq (BecauseExpr expr) tv f])
-    BuiltinThis typ -> pure (A.empty, typ, [])
-    
+    someA <- S.freshType StarKind
+    let somePointer = typePtrOf someA
+
+    pure (A.empty, tv, [CEq (BecauseExpr expr) tv somePointer])
+  BuiltinNewArray typ -> do
+    tv         <- S.freshType StarKind
+    resultType <- S.freshType StarKind
+
+    let f = makeFn2 tv resultType
+
+    pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
+  BuiltinNew typ -> do
+    resultType <- S.freshType StarKind
+
+    pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])
+  BuiltinAssign -> do
+    tv          <- S.freshType StarKind
+
+    (f, fPreds) <- freshFun expr
+
+    let result = makeArrow tv typeLinArrow $ makeArrow tv f typeUnit
+
+    pure (A.empty, result, fPreds <> [CGeq (BecauseExpr expr) tv f])
+  BuiltinThis typ -> pure (A.empty, typ, [])
+
 
 
 -- | Attempt to convert the type scheme into a normal(ish) format  

@@ -54,7 +54,7 @@ prettyType ps = \case
     prettyLeft a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
   TAp a@TAp{} b -> PP.parens (prettyType ps a) <+> prettyType ps b
   TAp a       b -> prettyType ps a <+> prettyType ps b
-  TSymbol n -> PP.squote <> PP.dquotes (pretty n)
+  TSymbol n     -> PP.squote <> PP.dquotes (pretty n)
  where
   prettyLeft a = maybeParenArrow isFunction a (prettyType ps a)
   isFunction f = PFun f `S.member` ps
@@ -70,7 +70,7 @@ data Kind = StarKind
           deriving stock (Eq, Show, Ord)
 
 instance PP.Pretty Kind where
-  pretty StarKind = "Type"
+  pretty StarKind   = "Type"
   pretty SymbolKind = "Symbol"
   pretty (ArrowKind a@ArrowKind{} b) =
     PP.parens (pretty a) <+> "->" <+> pretty b

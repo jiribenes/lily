@@ -28,7 +28,7 @@ import           Name
 import           Type.Constraint
 import           Type.Type
 import           Type.Unify
-import qualified Type.Class as C
+import qualified Type.Class                    as C
 
 data SolveError = SolveError Reason UnificationError -- for now, anyways...
 
@@ -42,8 +42,12 @@ data SolveEnv = SolveEnv { _classEnv :: C.ClassEnv}
 makeClassy ''SolveEnv
 
 runSolveT
-  :: C.ClassEnv -> FreshState Name -> Solve a -> Either SolveError (a, FreshState Name)
-runSolveT ce freshSt m = runExcept $ runFreshT (runReaderT m (SolveEnv ce)) freshSt
+  :: C.ClassEnv
+  -> FreshState Name
+  -> Solve a
+  -> Either SolveError (a, FreshState Name)
+runSolveT ce freshSt m =
+  runExcept $ runFreshT (runReaderT m (SolveEnv ce)) freshSt
 
 toPreds :: [Constraint] -> [Pred]
 toPreds cs = [ IsIn n ts | CIn _ n ts <- cs ]
@@ -58,11 +62,11 @@ simplify env (CGeq r other (f `TAp` _ `TAp` _)) cs
 simplify env (CGeq r (f `TAp` _ `TAp` _) other) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) f other]
 simplify env c@(CIn _ n ts) cs = case C.substPred env $ IsIn n ts of
-    Nothing -> simplifyGeq (findConstraint env cs) c
-    Just (Subst s) -> case M.toList s of
-      [] -> []
-      [(a, v)] -> [CEq BecauseFunDep (TVar a) v]
-      _ -> error "impossible"
+  Nothing        -> simplifyGeq (findConstraint env cs) c
+  Just (Subst s) -> case M.toList s of
+    []       -> []
+    [(a, v)] -> [CEq BecauseFunDep (TVar a) v]
+    _        -> error "impossible"
 simplify _ c _ = [c]
 
 -- | Find the given constraint either among the other constraints or in the 'ClassEnv'
@@ -83,8 +87,9 @@ simplifyGeq p c@(CGeq r a b) | p (CUn r a) = traceShow ("deleting", pretty c) []
 -- |-------------------------------
 -- |      b ~ unArrow
 -- |
-simplifyGeq p c@(CGeq r a b) | not (p (CUn r b)) && p (CFun r b) && p (CFun r a) && a == typeLinArrow =
-  traceShow ("replacing", pretty c) ([CEq r b typeLinArrow] :: [Constraint])
+simplifyGeq p c@(CGeq r a b)
+  | not (p (CUn r b)) && p (CFun r b) && p (CFun r a) && a == typeLinArrow
+  = traceShow ("replacing", pretty c) ([CEq r b typeLinArrow] :: [Constraint])
 
 -- Follows from entailment rule:
 -- |
@@ -103,8 +108,7 @@ simplifyGeq _ c = [c]
 simplifyMany :: C.ClassEnv -> [Constraint] -> [Constraint]
 simplifyMany e cs | cs == cs' = cs
                   | otherwise = simplifyMany e cs' --TODO: simplification is disabled for the time-being
-  where
-    cs' = chooseOne cs >>= uncurry (simplify e)
+  where cs' = chooseOne cs >>= uncurry (simplify e)
 
 -- Solving:
 solve :: [Constraint] -> Solve (Subst, [Constraint])
@@ -133,7 +137,8 @@ solve' (CExpInst r t s, cs) = do
   (sub, unsolved) <- solve $ CEq (Instantiated s s' r) t s' : preds <> cs
   pure (sub, unsolved)
 solve' (CIn{}, _) =
-  error "This should never happen, such a constraint is unsolvable and shouldn't get to `solve'`!"
+  error
+    "This should never happen, such a constraint is unsolvable and shouldn't get to `solve'`!"
 
 addReason :: Reason -> Except UnificationError a -> Solve a
 addReason r x = case runExcept x of
