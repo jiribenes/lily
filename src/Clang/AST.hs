@@ -7,7 +7,9 @@ where
 import qualified Data.ByteString.Char8         as BS
 import           Data.Foldable                  ( traverse_ )
 import           Language.C.Clang               ( TranslationUnit )
-import           Language.C.Clang.Cursor        ( Cursor
+import           Language.C.Clang.Cursor        ( cursorUSR
+                                                , cursorReferenced
+                                                , Cursor
                                                 , cursorChildren
                                                 , cursorKind
                                                 , cursorSpelling
@@ -15,6 +17,7 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 )
 
 import           Clang.Function
+import           Data.Maybe                     ( isJust )
 
 
 printAST :: TranslationUnit -> IO ()
@@ -28,10 +31,16 @@ printAST tu = go 0 $ translationUnitCursor tu
     let hasBody =
           maybe "" (\x -> if functionHasBody x then "[has body]" else "")
             $ toSomeFunction c
+    let hasRef = if isJust $ cursorReferenced c then "[has ref]" else ""
+    let usr =
+          let usr' = BS.unpack (cursorUSR c)
+          in  if null usr' then "" else " {" <> BS.unpack (cursorUSR c) <> "}"
 
-    putStrLn $ indent i kind <> canon <> if null spelling
+    putStrLn $ indent i kind <> canon <> usr <> if null spelling
       then ""
-      else ", " <> spelling <> if null hasBody then "" else ", " <> hasBody
+      else ", " <> spelling <> if null hasBody
+        then ""
+        else ", " <> hasBody <> if null hasRef then "" else ", " <> hasRef
     traverse_ (go (i + 4)) $ cursorChildren c
 
   indent :: Int -> String -> String
