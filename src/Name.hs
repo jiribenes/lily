@@ -3,6 +3,7 @@
 module Name
   ( Name(Name)
   , nameFromBS
+  , nameIsNull
   )
 where
 
@@ -21,3 +22,6 @@ instance Show Name where
 
 nameFromBS :: ByteString -> Name
 nameFromBS = Name . decodeUtf8
+
+nameIsNull :: Name -> Bool
+nameIsNull = T.null . unName

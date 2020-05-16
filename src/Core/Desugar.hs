@@ -41,18 +41,27 @@ import           Clang.Struct                   ( StructCursor )
 import           Core.Located
 import           Core.Syntax
 import           Error
-import           Name                           ( Name(Name)
+import           Name                           ( nameIsNull
+                                                , Name(Name)
                                                 , nameFromBS
                                                 )
 import           Type.Type                      ( Kind(..)
                                                 , TCon(..)
                                                 , Type(..)
                                                 )
-import           Data.List                      ( find )
+import           Data.List                      ( dropWhileEnd
+                                                , find
+                                                )
 import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
+import           Control.Monad                  ( when )
+import           Language.C.Clang.Token         ( tokenSpelling
+                                                , tokenize
+                                                , tokenSetTokens
+                                                )
+import           Clang.MemberParser
 
 data DesugarError = WeirdFunctionBody Location
                   | UnknownBinaryOperation Location
@@ -65,6 +74,7 @@ data DesugarError = WeirdFunctionBody Location
                   | WeirdNewOperator Location
                   | ExpectedReferencedExpr Location
                   | ExpectedThis Location
+                  | ExpectedNamed Location
                   | DesugarWeirdness Location -- this is a catch-all TODO: replace by appropriate use!
     deriving stock (Show, Eq)
 
@@ -114,6 +124,13 @@ instance Pretty DesugarError where
       (PP.sep
         [ "Found a member reference for a struct/class, but no specifier on LHS!"
         , "Suggestion: Please add a `this->` to all member references/method calls!"
+        , "Location: " <+> prettyLocation l
+        ]
+      )
+    ExpectedNamed l -> PP.align
+      (PP.sep
+        [ "Found a member reference but Clang doesn't know it's name (RHS)!"
+        , "This is really weird!"
         , "Location: " <+> prettyLocation l
         ]
       )
@@ -244,8 +261,12 @@ desugarExpr cursor = case cursorKind cursor of
 
   MemberRefExpr -> case cursorChildren cursor of
     [child] -> do
-      expr <- desugarExpr child
-      let memberName       = nameFromBS $ cursorSpelling cursor
+      expr       <- desugarExpr child
+      memberName <-
+        note (ExpectedNamed $ loc cursor)
+        $   memberRHSSpelling
+        =<< T.matchKind @ 'MemberRefExpr cursor
+
       let memberSymbolType = TSymbol memberName
       pure
         $ App cursor (Builtin cursor (BuiltinMemberRef memberSymbolType)) expr
