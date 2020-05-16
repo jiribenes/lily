@@ -63,10 +63,10 @@ unifies (TAp t1 t2) (TAp t3 t4)        = unifyMany [t1, t2] [t3, t4]
 --     t2 := MR t1
 -- 
 -- so that it propagates
-unifies a@(MutRef t1) t2 | tracePretty (a, t2) True =
-  wrapIn MutRef $ t1 `unifies` t2
-unifies t1 b@(MutRef t2) | tracePretty (t1, b) True =
-  wrapIn MutRef $ t1 `unifies` t2
+-- unifies a@(MutRef t1) t2 | tracePretty (a, t2) True =
+--   t1 `unifies` t2
+-- unifies t1 b@(MutRef t2) | tracePretty (t1, b) True =
+--   t1 `unifies` t2
 
 -- TODO: solve multiple layers of mutable references
 -- how do we solve that properly? (mutable reborrows)
