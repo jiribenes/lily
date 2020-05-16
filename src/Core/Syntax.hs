@@ -26,9 +26,8 @@ import           Language.C.Clang.Cursor        ( Cursor
 import           Clang.OpParser
 import           Clang.Function                 ( ConstructorCursor )
 import           Name
-import           Type.Type                      ( TCon(TC)
-                                                , TCon
-                                                , Type
+import           Type.Type                      ( TCon(..)
+                                                , Type(..)
                                                 )
 import           Data.List                      ( find )
 
@@ -84,8 +83,9 @@ instance Pretty BuiltinExpr where
   pretty BuiltinNullPtr    = "#builtin_nullptr"
   pretty (BuiltinThis typ) = "#builtin_this" <+> prettyTypeApplication typ
 
-prettyTypeApplication :: Pretty a => a -> PP.Doc ann
-prettyTypeApplication typ = "@" <> PP.parens (pretty typ)
+prettyTypeApplication :: Type -> PP.Doc ann
+prettyTypeApplication typ@TAp{} = "@" <> PP.parens (pretty typ)
+prettyTypeApplication typ       = "@" <> pretty typ
 
 type Expr = Expr' Type Cursor
 type CursorExpr t = Expr' t Cursor

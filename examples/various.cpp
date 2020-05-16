@@ -1,45 +1,45 @@
-template <typename T>
-class Vec {
-    public:
-        Vec() : data(nullptr), length(0), capacity(0) {}
+struct Vec {
+        Vec() {
+            this->data = nullptr;
+            this->length = 0;
+            this->capacity = 0;
+        }    
 
-        void add(T something) {
+        void add(int something) {
             if (length >= capacity) {
-                capacity *= 2;
-                T* bigger_data = new T[capacity];
+                this->capacity *= 2;
+                int* bigger_data = new int[this->capacity];
                 for (int i = 0; i < length; ++i) {
-                    bigger_data[i] = data[i];
+                    bigger_data[i] = this->data[i];
                 }
-                delete data;
-                data = bigger_data;
+                delete this->data;
+                this->data = bigger_data;
             }
         }
 
-        T* ref(int index) const {
-            return &data[index];
+        int* ref(int index) const {
+            return &this->data[index];
         }
 
-    private:
-        T* data;
+        int* data;
         int length;
         int capacity;
 };
-;
 
-int* unsugref(Vec<int> v, int index) {
+int* unsugref(Vec v, int index) {
     return v.ref(index);
 }
 
-int* justReadin(Vec<int> v) {
+int* justReadin(Vec v) {
     return unsugref(v, 1);
 }
 
-int doubleIt(int num, char voidy) {
+int doubleIt(int num, int voidy) {
     return num * num + 2;
 }
 
 int usesDoubleIt(int othernum) {
-    return doubleIt(othernum, 'o');
+    return doubleIt(othernum, 2);
 }
 
 int woo(int* moo) {

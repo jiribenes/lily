@@ -218,8 +218,9 @@ desugarExpr cursor = case cursorKind cursor of
             referenced <- note (ExpectedReferencedExpr $ loc fn)
               $ cursorReferenced cursor
             desugarExpr referenced
-          FirstExpr -> desugarExpr fn
-          other     -> do
+          FirstExpr     -> desugarExpr fn
+          MemberRefExpr -> desugarExpr fn
+          other         -> do
             traceShowM $ "Found: " <> show other
             throwError (DesugarWeirdness $ loc fn)
             -- hope that this is a constructor.
