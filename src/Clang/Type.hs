@@ -7,10 +7,11 @@ where
 import qualified Data.ByteString.Char8         as BS
 import           Data.Functor                   ( (<&>) )
 import           Debug.Trace                    ( traceShow )
-import           Language.C.Clang.Type          ( typeResultType
-                                                , typeArgTypes
+import           GHC.Stack                      ( HasCallStack )
+import           Language.C.Clang.Type          ( typeArgTypes
                                                 , typeCanonicalType
                                                 , typePointeeType
+                                                , typeResultType
                                                 , typeSpelling
                                                 )
 import qualified Language.C.Clang.Type         as ClangType
@@ -18,14 +19,16 @@ import qualified Language.C.Clang.Type         as ClangType
 import           Type.Type
 import           Name                           ( nameFromBS )
 
---TODO: remove this
-import           GHC.Stack                      ( HasCallStack )
 
 type ClangType = ClangType.Type
 
+-- Note: This function is technically partial because Clang
+-- can have 'ClangType.Type.Invalid' type kind
+-- which indicates an unrecoverable error in Clang itself.
+-- We'll just error in that case since what else is to do there?
 fromClangType :: HasCallStack => ClangType -> Maybe Type
 fromClangType clangType = case ClangType.typeKind canonicalClangType of
-  ClangType.Invalid   -> error "invalid clang type"
+  ClangType.Invalid   -> error "internal error: invalid Clang type!"
   ClangType.Unexposed -> traceShow
     (  "Found type: "
     <> BS.unpack (typeSpelling clangType)
@@ -44,7 +47,7 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     let name = nameFromBS $ typeSpelling canonicalClangType
     let tc   = TC name StarKind -- TODO: get kind from clang
     pure (TCon tc)
-  ClangType.LValueReference -> do
+  ClangType.LValueReference ->
     typePointeeType canonicalClangType >>= fromClangType <&> MutRef
   ClangType.FunctionProto -> do
     clangArgTypes <- typeArgTypes canonicalClangType

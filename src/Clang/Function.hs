@@ -97,22 +97,27 @@ calledFunctions =
     . functionDecls
  where
   referencedCalls :: Fold Cursor Cursor
-  referencedCalls = folding (T.matchKind @ 'DeclRefExpr)
-    . filtered (isFromMainFile . rangeStart . T.cursorExtent)
-    . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
+  referencedCalls =
+    folding (T.matchKind @ 'DeclRefExpr)
+      . filtered (isFromMainFile . rangeStart . T.cursorExtent)
+      . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
   -- this is in fact necessary and sufficient because we have to reference previously declared functions,
   -- but they can also be just references to a function pointer instead of a 'CallExpr'
 
   referencedCtorCalls :: Fold Cursor Cursor
-  referencedCtorCalls = folding (T.matchKind @ 'CallExpr)
-    . filtered (isFromMainFile . rangeStart . T.cursorExtent)
-    . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
+  referencedCtorCalls =
+    folding (T.matchKind @ 'CallExpr)
+      . filtered (isFromMainFile . rangeStart . T.cursorExtent)
+      . folding (fmap cursorCanonical . cursorReferenced . T.withoutKind)
 
   functionDecls :: Fold Cursor SomeFunctionCursor
   functionDecls = folding toSomeFunction
 
 allFunctions :: Fold Cursor SomeFunctionCursor
-allFunctions = cursorDescendantsF . filtered (isFromMainFile . rangeStart . fromJust . cursorExtent) . folding toSomeFunction
+allFunctions =
+  cursorDescendantsF
+    . filtered (isFromMainFile . rangeStart . fromJust . cursorExtent)
+    . folding toSomeFunction
 
 getFunctionBody
   :: SomeFunctionCursor -> TranslationUnit -> Maybe SomeFunctionCursor

@@ -6,13 +6,13 @@ module Clang.MemberParser
   )
 where
 
-import qualified Language.C.Clang.Cursor.Typed as T
-import           Language.C.Clang.Cursor        ( cursorSpelling
-                                                , CursorKind(..)
+import           Language.C.Clang.Cursor        ( CursorKind(..)
+                                                , cursorSpelling
                                                 )
+import qualified Language.C.Clang.Cursor.Typed as T
+import           Language.C.Clang.Token
 
 import           Name
-import           Language.C.Clang.Token
 
 memberRHSSpelling :: T.CursorK 'MemberRefExpr -> Maybe Name
 memberRHSSpelling c = if nameIsNull name

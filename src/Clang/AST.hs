@@ -3,9 +3,9 @@ module Clang.AST
   )
 where
 
-
 import qualified Data.ByteString.Char8         as BS
 import           Data.Foldable                  ( traverse_ )
+import           Data.Maybe                     ( isJust )
 import           Language.C.Clang               ( TranslationUnit )
 import           Language.C.Clang.Cursor        ( cursorUSR
                                                 , cursorReferenced
@@ -17,8 +17,6 @@ import           Language.C.Clang.Cursor        ( cursorUSR
                                                 )
 
 import           Clang.Function
-import           Data.Maybe                     ( isJust )
-
 
 printAST :: TranslationUnit -> IO ()
 printAST tu = go 0 $ translationUnitCursor tu

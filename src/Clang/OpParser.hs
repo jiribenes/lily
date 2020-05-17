@@ -78,8 +78,8 @@ withoutAssign = \case
   BinOpShrAssign -> Just BinOpShr
   BinOpAndAssign -> Just BinOpAnd
   BinOpXorAssign -> Just BinOpXor
-  BinOpOrAssign -> Just BinOpOr
-  _ -> Nothing
+  BinOpOrAssign  -> Just BinOpOr
+  _              -> Nothing
 
 parseBinOpToken :: ByteString -> Maybe BinOp
 parseBinOpToken ".*"  = pure BinOpPtrMemD

@@ -1,7 +1,12 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE TypeApplications #-}
-module Clang.Struct where
 
+module Clang.Struct
+  ( StructCursor
+  , structsF
+  , structs
+  )
+where
 
 import           Control.Lens
 import           Language.C.Clang
