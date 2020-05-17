@@ -15,53 +15,45 @@ module Core.Desugar
 where
 
 import           Control.Lens
+import           Control.Monad                  ( unless )
 import           Control.Monad.Except           ( MonadError
                                                 , throwError
                                                 )
-import           Control.Monad                  ( unless )
-import           Control.Monad.Reader           ( runReaderT
-                                                , MonadReader
+import           Control.Monad.Reader           ( MonadReader
+                                                , runReaderT
                                                 )
 import           Data.Foldable                  ( foldlM )
 import qualified Data.Graph                    as G
+import           Data.List                      ( find )
 import qualified Data.List.NonEmpty            as NE
-import           Data.Maybe                     ( isJust
-                                                , fromJust
+import           Data.Maybe                     ( fromJust
+                                                , isJust
                                                 )
-import           Debug.Trace                    ( traceShowM
-                                                , traceM
+import qualified Data.Text.Prettyprint.Doc     as PP
+import           Data.Text.Prettyprint.Doc      ( (<+>)
+                                                , Pretty(..)
+                                                )
+import           Debug.Trace                    ( traceM
+                                                , traceShowM
                                                 )
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Clang.Function
-import           Clang.Type
+import           Clang.MemberParser
 import           Clang.OpParser
 import           Clang.Struct                   ( StructCursor )
+import           Clang.Type
 import           Core.Located
 import           Core.Syntax
 import           Error
-import           Name                           ( nameIsNull
-                                                , Name(Name)
+import           Name                           ( Name(Name)
                                                 , nameFromBS
                                                 )
 import           Type.Type                      ( Kind(..)
                                                 , TCon(..)
                                                 , Type(..)
                                                 )
-import           Data.List                      ( dropWhileEnd
-                                                , find
-                                                )
-import qualified Data.Text.Prettyprint.Doc     as PP
-import           Data.Text.Prettyprint.Doc      ( (<+>)
-                                                , Pretty(..)
-                                                )
-import           Control.Monad                  ( when )
-import           Language.C.Clang.Token         ( tokenSpelling
-                                                , tokenize
-                                                , tokenSetTokens
-                                                )
-import           Clang.MemberParser
 
 data DesugarError = WeirdFunctionBody Location
                   | UnknownBinaryOperation Location
@@ -189,20 +181,20 @@ desugarExpr cursor = case cursorKind cursor of
     let name = nameFromBS $ cursorSpelling cursor
     pure $ Var cursor name
 
-  CXXNewExpr -> do
+  CXXNewExpr ->
     -- TODO: This is not correct at all!
     -- look at 'new int' vs 'new int[7]' vs 'new Struct' vs 'new Struct[10]'
-    case cursorChildren cursor of
-      [] -> do
-        typ <- extractType cursor
-        pure $ Builtin cursor (BuiltinNew typ)
-      xs -> do
-        typ       <- extractType cursor
-        child     <- note (WeirdNewOperator $ loc cursor) $ xs ^? _last
+                case cursorChildren cursor of
+    [] -> do
+      typ <- extractType cursor
+      pure $ Builtin cursor (BuiltinNew typ)
+    xs -> do
+      typ       <- extractType cursor
+      child     <- note (WeirdNewOperator $ loc cursor) $ xs ^? _last
 
-        childExpr <- desugarExpr child
+      childExpr <- desugarExpr child
 
-        pure $ App cursor (Builtin cursor (BuiltinNewArray typ)) childExpr
+      pure $ App cursor (Builtin cursor (BuiltinNewArray typ)) childExpr
 
   ArraySubscriptExpr -> do
     let [left, right] = cursorChildren cursor
@@ -224,31 +216,30 @@ desugarExpr cursor = case cursorKind cursor of
     let name = nameFromBS $ cursorSpelling referenced
     pure $ Var cursor name
 
-  CallExpr -> do
-    case cursorChildren cursor of
-      [child]  -> desugarExpr child
-      children -> do
-        let (fn : args) = children
-        fnExpr <- case cursorKind fn of
-          DeclRefExpr -> desugarExpr fn
-          TypeRef     -> do
-            referenced <- note (ExpectedReferencedExpr $ loc fn)
-              $ cursorReferenced cursor
-            desugarExpr referenced
-          FirstExpr     -> desugarExpr fn
-          MemberRefExpr -> desugarExpr fn
-          other         -> do
-            traceShowM $ "Found: " <> show other
-            throwError (DesugarWeirdness $ loc fn)
-            -- hope that this is a constructor.
-        exprs <- traverse desugarExpr args
+  CallExpr -> case cursorChildren cursor of
+    [child]  -> desugarExpr child
+    children -> do
+      let (fn : args) = children
+      fnExpr <- case cursorKind fn of
+        DeclRefExpr   -> desugarExpr fn
+        FirstExpr     -> desugarExpr fn
+        MemberRefExpr -> desugarExpr fn
+        TypeRef       -> do
+          referenced <- note (ExpectedReferencedExpr $ loc fn)
+            $ cursorReferenced cursor
+          desugarExpr referenced
+        other -> do
+          traceShowM $ "Found: " <> show other
+          throwError (DesugarWeirdness $ loc fn)
+          -- hope that this is a constructor.
+      exprs <- traverse desugarExpr args
 
-        -- TODO: can we write this using Lens?
-        let exprs' = case exprs of
-              [] -> [unit cursor]
-              xs -> xs
+      -- TODO: can we write this using Lens?
+      let exprs' = case exprs of
+            [] -> [unit cursor]
+            xs -> xs
 
-        pure $ foldl (App cursor) fnExpr exprs'
+      pure $ foldl (App cursor) fnExpr exprs'
 
   CXXThisExpr -> do
     ctor <- view currentCtor
@@ -431,8 +422,9 @@ desugarTopLevelFunction = \case
         pure $ TLLet $ Let untypedCursor name function
       _ -> throwError (WeirdFunctionBody $ loc cursor)
 
+-- | Desugar an expression with the constructor set to the specified value
 withConstructor :: MonadDesugar m => ConstructorCursor -> (m a -> m a)
-withConstructor c f = locally currentCtor (const $ Just c) $ f
+withConstructor c = locally currentCtor (const $ Just c)
 
 desugarConstructor :: MonadDesugar m => ConstructorCursor -> m TopLevel
 desugarConstructor cursor = withConstructor cursor $ do
