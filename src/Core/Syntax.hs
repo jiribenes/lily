@@ -157,13 +157,26 @@ instance Pretty t => Pretty (TopLevel' t Cursor) where
     "rec" <+> PP.align (PP.vsep $ NE.toList $ pretty <$> ls)
   pretty (TLStruct s) = pretty s
 
+-- | Takes an expression and peels off the initial 'LetIn's
+-- and gathers their names, leaving just the proper expression.
+--
+-- This is used for pretty printing 'Expr'essions.
+gatherLets :: Expr' t c -> ([(Name, Expr' t c)], Expr' t c)
+gatherLets expr = go [] expr & _1 %~ reverse
+ where
+  go lets (LetIn _ name e1 e2) = go ((name, e1) : lets) e2
+  go lets e                    = (lets, e)
+
 instance Pretty t => Pretty (Expr' t Cursor) where
   pretty (Var _ name         ) = pretty name
   pretty (App _ e1   e2@App{}) = pretty e1 <+> PP.parens (pretty e2)
   pretty (App _ e1   e2      ) = pretty e1 <+> pretty e2
   pretty (Lam _ name expr    ) = "\\" <> pretty name <+> "->" <+> pretty expr
-  pretty (LetIn _ name e1 e2 ) = PP.align
-    (PP.sep ["let" <+> pretty name <+> "=" <+> pretty e1, "in" <+> pretty e2])
+  pretty expr@LetIn{}          = PP.align
+    (PP.vsep ((prettyLet <$> lets) <> ["in" <+> pretty restExpr]))
+   where
+    (lets, restExpr) = gatherLets expr
+    prettyLet (n, e) = "let" <+> pretty n <+> "=" <+> pretty e
   pretty (If _ cond thn els) = "if" <+> PP.align
     (PP.vsep [pretty cond, "then" <+> pretty thn, "else" <+> pretty els])
   pretty (Literal c t) =
