@@ -24,7 +24,7 @@ import           Language.C.Clang.Location
 import qualified Language.C.Clang.Cursor.Typed as T
 
 import           Core.Syntax
-import           Clang.Function
+import           Clang
 
 newtype Range = Range { unRange :: (Location, Location) }
     deriving stock (Show, Eq)

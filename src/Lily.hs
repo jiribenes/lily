@@ -20,10 +20,7 @@ import           Data.Text.Prettyprint.Doc.Render.Text
                                                 ( putDoc )
 import           System.Exit                    ( exitFailure )
 
-import           Clang
-import           Clang.AST
-import           Clang.Function
-import qualified Clang.Struct                  as C
+import qualified Clang                         as C
 import           Core.Desugar                   ( desugarTopLevel )
 import           Type.Infer                     ( inferTop
                                                 , typeEnv
@@ -31,19 +28,23 @@ import           Type.Infer                     ( inferTop
 
 lily :: FilePath -> IO ()
 lily filepath = do
-  tu <- createTranslationUnit filepath [] >>= \case
+  tu <- C.createTranslationUnit filepath [] >>= \case
     Just x  -> pure x
     Nothing -> exitFailure
 
-  printAST tu
+  C.printAST tu
   let structs = C.structs tu
-  let scc = recursiveComponents tu
+  let scc     = C.recursiveComponents tu
 
   putStrLn "----------------------"
   scc' <- case desugarTopLevel structs scc of
     Left err -> do
-      putStrLn "Desugaring failed!"
-      putStrLn $ "Error: " <> show err
+      putStrLn "======================"
+      putStrLn "Error happened during desugaring!"
+      putStrLn "----------------------"
+      putDoc $ pretty err
+      putStrLn ""
+      putStrLn "======================"
       exitFailure
     Right xs -> do
       putDoc $ PP.align $ PP.vcat $ pretty <$> xs

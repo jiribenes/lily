@@ -1,7 +1,8 @@
 {-# LANGUAGE TypeApplications #-}
 
 module Clang
-  ( createTranslationUnit
+  ( module X
+  , createTranslationUnit
   )
 where
 
@@ -22,6 +23,13 @@ import           Language.C.Clang               ( parseTranslationUnit
 import           Control.Exception              ( try
                                                 , displayException
                                                 )
+
+-- Reexport of all Clang submodules
+import           Clang.AST                     as X
+import           Clang.Function                as X
+import           Clang.MemberParser            as X
+import           Clang.Struct                  as X
+import           Clang.Type                    as X
 
 createTranslationUnit :: FilePath -> [String] -> IO (Maybe TranslationUnit)
 createTranslationUnit filepath clangOptions = do

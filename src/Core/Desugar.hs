@@ -39,11 +39,8 @@ import           Debug.Trace                    ( traceM
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
 
-import           Clang.Function
-import           Clang.MemberParser
+import           Clang
 import           Clang.OpParser
-import           Clang.Struct                   ( StructCursor )
-import           Clang.Type
 import           Core.Located
 import           Core.Syntax
 import           Error

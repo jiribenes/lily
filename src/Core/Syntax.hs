@@ -23,12 +23,10 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 , cursorSpelling
                                                 )
 
+import           Clang
 import           Clang.OpParser
-import           Clang.Function                 ( ConstructorCursor )
 import           Name
-import           Type.Type                      ( TCon(..)
-                                                , Type(..)
-                                                )
+import           Type.Type                      ( Type(..) )
 import           Data.List                      ( find )
 
 -- | All available expressions
