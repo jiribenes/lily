@@ -31,6 +31,10 @@ import           Name
 import           Type.Type
 
 data Reason = BecauseExpr Expr
+            | BecauseIfCondition Expr Expr
+            | BecauseIfBranches Expr Expr Expr
+            | BecauseFunction Expr Name Expr
+            | BecauseApp Expr Expr Expr
             | PairedAssumption Name Type Scheme
             | Simplified Reason
             | Generalized Reason
@@ -49,11 +53,45 @@ data Reason = BecauseExpr Expr
 instance Pretty Reason where
   pretty (BecauseExpr expr) =
     "from expression at" <+> prettyLocation (loc expr)
+  pretty (BecauseIfCondition ifte expr) = PP.align $ PP.sep
+    [ "expected condition to be a boolean"
+    , PP.indent 4 $ "from condition at" <+> prettyLocation (loc expr)
+    , PP.indent 4 $ "from if statement at" <+> prettyLocation (loc ifte)
+    ]
+  pretty (BecauseIfBranches ifte e1 e2) = PP.align $ PP.sep
+    [ "expected positive and negative branch of if to have the same type"
+    , PP.indent 4 $ "from positive branch at" <+> prettyLocation (loc e1)
+    , PP.indent 4 $ "from negative branch at" <+> prettyLocation (loc e2)
+    , PP.indent 4 $ "from if statement at" <+> prettyLocation (loc ifte)
+    ]
+  pretty (BecauseFunction lam x e) = PP.align $ PP.sep
+    [ "expected function parameter and body to have a compatible type in function declaration"
+    , PP.indent 4 $ "from parameter" <+> PP.squotes (pretty x)
+    , PP.indent 4 $ "from function at:" <+> prettyLocation (loc e)
+    , PP.indent 4 $ "from function body at:" <+> prettyLocation (loc lam)
+    ]
+  pretty (BecauseApp app e1 e2) = PP.align $ PP.sep
+    [ "expected function call and argument to have a compatible type"
+    , PP.indent 4 $ "from function at:" <+> prettyLocation (loc e1)
+    , PP.indent 4 $ "from argument" <+> PP.squotes (pretty e2)
+    , PP.indent 4 $ "from function call at:" <+> prettyLocation (loc app)
+    ]
   pretty (PairedAssumption n t s) =
-    "from generalizing an assumption that:" <+> pretty n <+> "::" <+> pretty t <+> "~>" <+> pretty s
+    "from generalizing an assumption that:"
+      <+> pretty n
+      <+> "::"
+      <+> pretty t
+      <+> "~>"
+      <+> pretty s
   pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
   pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
-  pretty (Instantiated s t r) = "from instantiation of:" <+> PP.align (PP.sep ["from instantiating scheme:" <+> pretty s, "into type:" <+> pretty t, PP.indent 4 $ pretty r])
+  pretty (Instantiated s t r) = "from instantiation of:" <+> PP.align
+    (PP.sep
+      [ "from instantiating scheme:" <+> pretty s
+      , "into type:" <+> pretty t
+      , PP.indent 4 $ pretty r
+      ]
+    )
   pretty BecauseCloseOver     = "from closing over a type"
   pretty BecauseInstantiate   = "from instantiation of a predicate"
   pretty BecauseWkn           = "from a [Wkn] rule"

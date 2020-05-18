@@ -322,7 +322,7 @@ infer expr = case expr of
       ( as'
       , makeArrow tv f t
       , cs
-      <> [ CEq (BecauseExpr e) t' tv | t' <- A.lookup x as ]
+      <> [ CEq (BecauseFunction expr x e) t' tv | t' <- A.lookup x as ]
       <> fPreds
       <> preds
       )
@@ -340,7 +340,7 @@ infer expr = case expr of
       , tv
       , cs1
       <> cs2
-      <> [CEq (BecauseExpr expr) t1 (makeArrow t2 f tv)]
+      <> [CEq (BecauseApp expr e1 e2) t1 (makeArrow t2 f tv)]
       <> fPreds
       <> preds
       )
@@ -378,7 +378,9 @@ infer expr = case expr of
       , cs1
       <> cs2
       <> cs3
-      <> [CEq (BecauseExpr expr) t1 typeBool, CEq (BecauseExpr expr) t2 t3]
+      <> [ CEq (BecauseIfCondition expr e1)   t1 typeBool
+         , CEq (BecauseIfBranches expr e2 e3) t2 t3
+         ]
       )
 
   Builtin cursor b -> inferBuiltin expr cursor b
@@ -539,10 +541,10 @@ normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   properSub = Subst $ M.map TVar sub
 
   normtype :: Type -> Type
-  normtype (TAp a b)     = normtype a `TAp` normtype b
-  normtype con@TCon{}    = con
+  normtype (TAp a b)  = normtype a `TAp` normtype b
+  normtype con@TCon{} = con
   normtype sym@TSym{} = sym
-  normtype (TVar a)      = case a `M.lookup` sub of
+  normtype (TVar a)   = case a `M.lookup` sub of
     Just x  -> TVar x
     Nothing -> error "tv not in signature"
 
