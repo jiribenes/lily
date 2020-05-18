@@ -279,11 +279,22 @@ desugarLiteral cursor = do
   typ <- extractType cursor
   pure $ Literal cursor typ
 
+-- | Desugars a block
 desugarBlock
   :: MonadDesugar m => (Cursor -> Expr) -> T.CursorK 'CompoundStmt -> m Expr
 desugarBlock defaultResult cursor = do
-  result <- longFunc
+  result <- desugarBlockCont defaultResult cursor
   pure $ result $ defaultResult (T.withoutKind cursor)
+
+-- | Desugars a block with a 'Expr'-shaped hole at the end of it
+desugarBlockCont
+  :: MonadDesugar m
+  => (Cursor -> Expr)
+  -> T.CursorK 'CompoundStmt
+  -> m (Expr -> Expr)
+desugarBlockCont defaultResult cursor = do
+  result <- longFunc
+  pure $ result
  where
   go :: MonadDesugar m => (Expr -> Expr) -> Cursor -> m (Expr -> Expr)
   go cont c = do
@@ -374,6 +385,11 @@ desugarBlockOne defaultResult cursor = case cursorKind cursor of
                      rightExpr
 
     pure $ \rest -> LetIn cursor (Name "_") setter rest
+
+  CompoundStmt -> do
+    block <- desugarBlockCont defaultResult
+                              (fromJust $ T.matchKind @ 'CompoundStmt cursor)
+    pure $ \rest -> block rest
 
   other -> do
     -- best effort 
