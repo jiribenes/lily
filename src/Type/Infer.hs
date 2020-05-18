@@ -85,7 +85,7 @@ makeClassy ''InferState
 initialInferState :: InferState
 initialInferState =
   InferState C.initialClassEnv
-    $   M.singleton "move"
+    $   M.singleton "std::move"
     $   Forall [varA]
     $   []
     :=> LinArrow a a

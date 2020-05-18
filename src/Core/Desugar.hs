@@ -44,13 +44,16 @@ import           Clang.OpParser
 import           Core.Located
 import           Core.Syntax
 import           Error
-import           Name                           ( Name(Name)
+import           Name                           ( nameIsNull
+                                                , Name(Name)
                                                 , nameFromBS
                                                 )
 import           Type.Type                      ( Kind(..)
                                                 , TCon(..)
                                                 , Type(..)
                                                 )
+import           Data.Text.Encoding             ( decodeUtf8 )
+import qualified Data.Text                     as T
 
 data DesugarError = WeirdFunctionBody Location
                   | UnknownBinaryOperation Location
@@ -176,7 +179,22 @@ desugarExpr cursor = case cursorKind cursor of
 
   DeclRefExpr -> do
     let name = nameFromBS $ cursorSpelling cursor
-    pure $ Var cursor name
+
+    -- Note: this requires no change in ordering!
+    let namespacesF :: Fold Cursor (T.CursorK 'NamespaceRef)
+        namespacesF = cursorChildrenF . folding (T.matchKind @ 'NamespaceRef)
+
+    let namespaceName =
+          cursor
+            ^.. namespacesF
+            .   to (decodeUtf8 . T.cursorSpelling)
+            &   T.intercalate "::"
+            &   Name
+    let fullName = if nameIsNull namespaceName
+          then name
+          else namespaceName <> "::" <> name
+
+    pure $ Var cursor fullName
 
   CXXNewExpr ->
     -- TODO: This is not correct at all!

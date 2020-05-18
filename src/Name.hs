@@ -15,7 +15,7 @@ import           Data.ByteString.Char8          ( ByteString )
 import           Data.Text.Encoding             ( decodeUtf8 )
 
 newtype Name = Name { unName :: Text }
-  deriving newtype (Eq, Ord, IsString, Pretty)
+  deriving newtype (Eq, Ord, IsString, Pretty, Semigroup, Monoid)
 
 instance Show Name where
   show = T.unpack . unName
