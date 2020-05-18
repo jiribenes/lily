@@ -127,7 +127,9 @@ type Struct = Struct' Type Cursor
 
 instance Pretty t => Pretty (Struct' t Cursor) where
   pretty (Struct _ _ name s _) = "struct" <+> pretty name <+> "=" <+> PP.align
-    (PP.encloseSep PP.lbrace PP.rbrace PP.comma $ pretty <$> s)
+    (braced $ pretty <$> s)
+   where
+    braced = PP.encloseSep (PP.flatAlt "{ " "{") (PP.flatAlt " }" "}") ", "
 
 findField :: Name -> Struct' t c -> Maybe (StructField' t c)
 findField n (Struct _ _ _ fields _) = find (isThisYourFieldName n) fields
