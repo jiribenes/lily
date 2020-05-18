@@ -8,7 +8,8 @@ import qualified Data.ByteString.Char8         as BS
 import           Data.Functor                   ( (<&>) )
 import           Debug.Trace                    ( traceShow )
 import           GHC.Stack                      ( HasCallStack )
-import           Language.C.Clang.Type          ( typeArgTypes
+import           Language.C.Clang.Type          ( typeElementType
+                                                , typeArgTypes
                                                 , typeCanonicalType
                                                 , typePointeeType
                                                 , typeResultType
@@ -18,6 +19,7 @@ import qualified Language.C.Clang.Type         as ClangType
 
 import           Type.Type
 import           Name                           ( nameFromBS )
+import           Control.Monad                  ( unless )
 
 
 type ClangType = ClangType.Type
@@ -37,10 +39,11 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     <> ", but returning Nothing for now! TODO"
     )
     Nothing -- TODO: this generally means that the type is a bit involved and you should just use a new type constructor with the given spelling!
-  ClangType.Void -> pure typeUnit
-  ClangType.Bool -> pure typeBool
-  ClangType.Int  -> pure typeInt
-  ClangType.UInt -> pure typeUInt
+  ClangType.Void   -> pure typeUnit
+  ClangType.Bool   -> pure typeBool
+  ClangType.Int    -> pure typeInt
+  ClangType.UInt   -> pure typeUInt
+  ClangType.Char_S -> pure typeChar
   ClangType.Pointer ->
     typePointeeType canonicalClangType >>= fromClangType <&> typePtrOf
   ClangType.Record -> do
@@ -56,6 +59,8 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     argTypes      <- traverse fromClangType clangArgTypes
 
     pure $ foldr (\x acc -> typeArrow `TAp` x `TAp` acc) resultType argTypes
+  ClangType.ConstantArray ->
+    typeElementType canonicalClangType >>= fromClangType <&> typeListOf
   other -> traceShow
     (unlines
       [ "internal error: Encountered unknown Clang type (no conversion available!)"

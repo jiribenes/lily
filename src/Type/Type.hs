@@ -96,6 +96,8 @@ conList :: TCon
 conList = TC "[]" $ ArrowKind StarKind StarKind
 typeList :: Type
 typeList = TCon conList
+typeListOf :: Type -> Type
+typeListOf t = typeList `TAp` t
 arrowKind :: Kind
 arrowKind = ArrowKind StarKind (ArrowKind StarKind StarKind)
 conArrow :: TCon
