@@ -37,7 +37,7 @@ instance Pretty TCon where
 data Type = TVar TVar
           | TCon TCon
           | TAp Type Type
-          | TSymbol !Name
+          | TSym !Name
           deriving stock (Eq, Show, Ord)
 
 instance Pretty Type where
@@ -54,7 +54,7 @@ prettyType ps = \case
     prettyLeft a <+> "-" <> PP.braces (pretty n) <> ">" <+> prettyType ps b
   TAp a@TAp{} b -> PP.parens (prettyType ps a) <+> prettyType ps b
   TAp a       b -> prettyType ps a <+> prettyType ps b
-  TSymbol n     -> PP.squote <> PP.dquotes (pretty n)
+  TSym n     -> PP.squote <> PP.dquotes (pretty n)
  where
   prettyLeft a = maybeParenArrow isFunction a (prettyType ps a)
   isFunction f = PFun f `S.member` ps
@@ -234,7 +234,7 @@ instance Substitutable Type where
   apply _         con@TCon{}       = con
   apply (Subst s) tv@(TVar x     ) = M.findWithDefault tv x s
   apply s         (   t1 `TAp` t2) = apply s t1 `TAp` apply s t2
-  apply _         sym@TSymbol{}    = sym
+  apply _         sym@TSym{}    = sym
 
 instance Substitutable Pred where
   apply s (IsIn x t) = IsIn x (apply s t)
@@ -266,7 +266,7 @@ instance FreeTypeVars Type where
   ftv TCon{}        = S.empty
   ftv (TVar x     ) = S.singleton x
   ftv (t1 `TAp` t2) = ftv t1 `S.union` ftv t2
-  ftv TSymbol{}     = S.empty
+  ftv TSym{}     = S.empty
 
 instance FreeTypeVars TVar where
   ftv = S.singleton
@@ -304,7 +304,7 @@ typeKind (TVar (TV _ k)) = k
 typeKind (TAp a _      ) = case typeKind a of
   ArrowKind _ k -> k
   k             -> k
-typeKind TSymbol{} = SymbolKind  
+typeKind TSym{} = SymbolKind  
 
 -- | Filter relevant predicates to given type
 filterRelevant :: Type -> S.Set Pred -> S.Set Pred

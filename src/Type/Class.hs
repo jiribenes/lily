@@ -230,4 +230,4 @@ hasFieldForStruct (Struct _ structType _ fields _) =
  where
   makeInstance :: StructField -> ClassInstance
   makeInstance (StructField _ t n) =
-    simpleInstance $ PHasField (TSymbol n) structType t
+    simpleInstance $ PHasField (TSym n) structType t

@@ -255,7 +255,7 @@ desugarExpr cursor = case cursorKind cursor of
         $   memberRHSSpelling
         =<< T.matchKind @ 'MemberRefExpr cursor
 
-      let memberSymbolType = TSymbol memberName
+      let memberSymbolType = TSym memberName
       pure
         $ App cursor (Builtin cursor (BuiltinMemberRef memberSymbolType)) expr
     [] -> do
