@@ -121,6 +121,10 @@ solve cs
     solve' $ nextSolvable $ simplifyMany env cs
 
 solve' :: (Constraint, [Constraint]) -> Solve (Subst, [Constraint])
+solve' (CEq r (t1 `TAp` t2) (t3 `TAp` t4), cs) = do
+  let reasonFirst = BecauseSplit r First
+  let reasonSecond = BecauseSplit r Second
+  solve (CEq reasonFirst t1 t3 : CEq reasonSecond t2 t4 : cs)
 solve' (CEq r t1 t2, cs) = do
   sub1             <- addReason r $ t1 `unifies` t2
   (sub2, unsolved) <- solve (sub1 `apply` cs)
