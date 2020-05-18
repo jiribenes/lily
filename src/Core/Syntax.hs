@@ -98,13 +98,20 @@ gatherArguments expr = go [] expr & _1 %~ reverse
   go names (Lam _ n e) = go (n : names) e
   go names e           = (names, e)
 
-data Let' t c = Let !c !Name !(Expr' t c)
+data LetKind = LetFunction | LetConstructor
+  deriving stock (Eq, Ord, Show)
+
+instance Pretty LetKind where
+  pretty LetFunction    = "fun"
+  pretty LetConstructor = "con"
+
+data Let' t c = Let !c LetKind !Name !(Expr' t c)
   deriving stock (Eq, Ord, Show, Functor)
 
 type Let = Let' Type Cursor
 
 instance Pretty t => Pretty (Let' t Cursor) where
-  pretty (Let _ name expr) = "let" <+> PP.align
+  pretty (Let _ k name expr) = pretty k <+> PP.align
     (PP.sep [pretty name <> prettyArgNames <+> "=", PP.hang 4 (pretty restExpr)]
     )
    where
@@ -195,7 +202,7 @@ instance HasCursor (Let' t Cursor) where
   cursorL = lens getter setter
    where
     getter :: Let' t Cursor -> Cursor
-    getter (Let c _ _) = c
+    getter (Let c _ _ _) = c
     setter :: Let' t Cursor -> Cursor -> Let' t Cursor
     setter l newCursor = l $> newCursor
 
@@ -223,5 +230,5 @@ instance HasName (Let' t c) where
   nameL = lens getter setter
    where
     getter :: Let' t c -> Name
-    getter (Let _ n _) = n
-    setter (Let c _ e) n = Let c n e
+    getter (Let _ _ n _) = n
+    setter (Let c k _ e) n = Let c k n e

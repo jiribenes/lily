@@ -416,7 +416,7 @@ desugarTopLevelFunction = \case
 
         let function = functionHeader functionBody
 
-        pure $ TLLet $ Let untypedCursor name function
+        pure $ TLLet $ Let untypedCursor LetFunction name function
       _ -> throwError (WeirdFunctionBody $ loc cursor)
 
 -- | Desugar an expression with the constructor set to the specified value
@@ -452,7 +452,7 @@ desugarConstructor cursor = withConstructor cursor $ do
 
       let function = functionHeader functionBody
 
-      pure $ TLLet $ Let untypedCursor name function
+      pure $ TLLet $ Let untypedCursor LetConstructor name function
     _ -> throwError (WeirdFunctionBody $ loc cursor)
 
 desugarParameters

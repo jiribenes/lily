@@ -143,7 +143,7 @@ inferType = \case
   TLStruct s -> do
     classEnv . C.instances %= C.updateInstances (C.hasFieldForStruct s)
     pure mempty
-  TLLet (Let _ name expr) -> do
+  TLLet (Let _ _ name expr) -> do
     (as, t, cs) <- infer expr
 
     boundNames  <- use (typeEnv . to M.keysSet)
@@ -182,7 +182,7 @@ inferType = \case
       (subst, subst `apply` toPreds unsolved, subst `apply` t)
 
   TLLetRecursive lets -> do
-    let (names, exprs) = unzip $ NE.toList $ lets <&> \(Let _ n e) -> (n, e)
+    let (names, exprs) = unzip $ NE.toList $ lets <&> \(Let _ _ n e) -> (n, e)
 
     tyVars <- traverse (const $ freshType StarKind) $ zip names exprs
     let recursiveAssumptions = A.empty `A.extendMany` zip names tyVars
