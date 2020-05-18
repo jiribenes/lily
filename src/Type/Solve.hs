@@ -31,6 +31,7 @@ import           Type.Unify
 import qualified Type.Class                    as C
 
 data SolveError = SolveError Reason UnificationError -- for now, anyways...
+    deriving stock (Eq, Show)
 
 instance Pretty SolveError where
   pretty (SolveError r x) =

@@ -57,6 +57,7 @@ data InferError = FromSolve SolveError
                 | Weirdness -- TODO: elaborate on this further!
                 | UnexpectedParameterDeclarationOutsideFunction
                 | UnknownASTNodeKind CursorKind
+                deriving stock (Eq, Show)
 
 instance Pretty InferError where
   pretty (FromSolve x) = pretty x

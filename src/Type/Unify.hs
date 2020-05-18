@@ -15,14 +15,12 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 import           Type.Type
 import           Name
 
-import           Debug.Trace.Pretty
-
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
                       | KindMismatch Type Type
                       | ConstructorNotFound Name
                       | Unsatisfied [Pred]
-                      deriving stock (Eq, Ord)
+                      deriving stock (Eq, Ord, Show)
 
 instance Pretty UnificationError where
   pretty (UnificationFail a b) = PP.align
