@@ -32,28 +32,28 @@ import           Data.List                      ( find )
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
 -- Multiple different expressions can have and indeed WILL have the same cursor.
-data Expr' t c = Var c Name
-               | App c (Expr' t c) (Expr' t c)
-               | Lam c Name (Expr' t c)
-               | LetIn c Name (Expr' t c) (Expr' t c)
-               | Literal c t
-               | If c (Expr' t c) (Expr' t c) (Expr' t c)
-               | Builtin c BuiltinExpr
+data Expr' t c = Var !c !Name
+               | App !c !(Expr' t c) !(Expr' t c)
+               | Lam !c !Name !(Expr' t c)
+               | LetIn !c !Name !(Expr' t c) !(Expr' t c)
+               | Literal !c !t
+               | If !c !(Expr' t c) !(Expr' t c) !(Expr' t c)
+               | Builtin !c !BuiltinExpr
           deriving stock (Eq, Ord, Show, Functor)
 
 --          | Ctor Name Expr
 --          | Elim Name [Name] Expr Expr
 
-data BuiltinExpr = BuiltinBinOp BinOp Type Type
-                 | BuiltinUnOp UnOp Type Type
-                 | BuiltinMemberRef Type  -- modelled after 'GHC.Records.HasField'
-                 | BuiltinNew Type
-                 | BuiltinNewArray Type
-                 | BuiltinArraySubscript Type Type
+data BuiltinExpr = BuiltinBinOp !BinOp !Type !Type
+                 | BuiltinUnOp !UnOp !Type !Type
+                 | BuiltinMemberRef !Type  -- modelled after 'GHC.Records.HasField'
+                 | BuiltinNew !Type
+                 | BuiltinNewArray !Type
+                 | BuiltinArraySubscript !Type !Type
                  | BuiltinAssign
                  | BuiltinUnit
                  | BuiltinNullPtr
-                 | BuiltinThis Type
+                 | BuiltinThis !Type
   deriving stock (Eq, Show, Ord)
 
 instance Pretty BuiltinExpr where
@@ -88,7 +88,7 @@ prettyTypeApplication typ       = "@" <> pretty typ
 type Expr = Expr' Type Cursor
 type CursorExpr t = Expr' t Cursor
 
-data Let' t c = Let c Name (Expr' t c)
+data Let' t c = Let !c !Name !(Expr' t c)
   deriving stock (Eq, Ord, Show, Functor)
 
 type Let = Let' Type Cursor
@@ -97,7 +97,7 @@ instance Pretty t => Pretty (Let' t Cursor) where
   pretty (Let _ name expr) =
     "let" <+> pretty name <+> "=" <+> PP.hang 4 (pretty expr)
 
-data StructField' t c = StructField c t Name
+data StructField' t c = StructField !c !t !Name
   deriving stock (Eq, Ord, Show, Functor)
 
 instance Pretty t => Pretty (StructField' t Cursor) where
@@ -105,7 +105,7 @@ instance Pretty t => Pretty (StructField' t Cursor) where
 
 type StructField = StructField' Type Cursor
 
-data Struct' t c = Struct c t Name [StructField' t c] [ConstructorCursor] -- t ~ TCon
+data Struct' t c = Struct !c !t !Name ![StructField' t c] ![ConstructorCursor] -- t ~ TCon
   deriving stock (Eq, Show, Functor)
 
 type Struct = Struct' Type Cursor
@@ -119,9 +119,9 @@ findField n (Struct _ _ _ fields _) = find (isThisYourFieldName n) fields
  where
   isThisYourFieldName name (StructField _ _ fieldName) = name == fieldName
 
-data TopLevel' t c = TLLet (Let' t c)
-                   | TLLetRecursive (NonEmpty (Let' t c))
-                   | TLStruct (Struct' t c)
+data TopLevel' t c = TLLet !(Let' t c)
+                   | TLLetRecursive !(NonEmpty (Let' t c))
+                   | TLStruct !(Struct' t c)
   deriving stock (Eq, Show, Functor)
 makePrisms ''TopLevel'
 

@@ -21,13 +21,13 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 
 import           Name
 
-data TVar = TV Name Kind deriving stock (Show, Eq, Ord)
+data TVar = TV !Name Kind deriving stock (Show, Eq, Ord)
 
 instance Pretty TVar where
   pretty (TV n StarKind) = pretty n
   pretty (TV n k       ) = PP.parens $ pretty n <+> "::" <+> pretty k
 
-data TCon = TC Name Kind deriving stock (Show, Eq, Ord)
+data TCon = TC !Name Kind deriving stock (Show, Eq, Ord)
 
 instance Pretty TCon where
   pretty (TC n StarKind) = pretty n
@@ -37,7 +37,7 @@ instance Pretty TCon where
 data Type = TVar TVar
           | TCon TCon
           | TAp Type Type
-          | TSymbol Name
+          | TSymbol !Name
           deriving stock (Eq, Show, Ord)
 
 instance Pretty Type where
@@ -120,7 +120,7 @@ pattern MutRef x <- _ `TAp` x
   where MutRef x = typeMutRef `TAp` x
 
 -- | (typeclass) Predicate 
-data Pred = IsIn Name (NonEmpty Type) deriving stock (Eq, Show, Ord)
+data Pred = IsIn !Name (NonEmpty Type) deriving stock (Eq, Show, Ord)
 
 instance Pretty Pred where
   pretty (PGeq x y ) = pretty x <+> "⩾" <+> pretty y
