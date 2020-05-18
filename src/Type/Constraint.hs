@@ -5,8 +5,7 @@
 {-# LANGUAGE PatternSynonyms #-}
 
 module Type.Constraint
-  ( SplitPosition(..)
-  , Reason(..)
+  ( Reason(..)
   , because
   , Constraint(..)
   , reasonL
@@ -31,19 +30,11 @@ import           Core.Syntax                    ( Expr )
 import           Name
 import           Type.Type
 
-data SplitPosition = First | Second
-    deriving stock (Eq, Ord, Show)
-
-instance Pretty SplitPosition where
-  pretty First  = "the first part"
-  pretty Second = "the second part"
-
 data Reason = BecauseExpr Expr
             | PairedAssumption Name Type Scheme
             | Simplified Reason
             | Generalized Reason
             | Instantiated Scheme Type Reason
-            | BecauseSplit Reason SplitPosition
             | BecauseCloseOver
             | BecauseInstantiate
             | BecauseFun
@@ -59,23 +50,10 @@ instance Pretty Reason where
   pretty (BecauseExpr expr) =
     "from expression at" <+> prettyLocation (loc expr)
   pretty (PairedAssumption n t s) =
-    "from generalizing an assumption that:"
-      <+> pretty n
-      <+> "::"
-      <+> pretty t
-      <+> "~>"
-      <+> pretty s
+    "from generalizing an assumption that:" <+> pretty n <+> "::" <+> pretty t <+> "~>" <+> pretty s
   pretty (Simplified r) = "from simplification of:" <+> PP.indent 4 (pretty r)
   pretty (Generalized r) = "from generalization of:" <+> PP.indent 4 (pretty r)
-  pretty (BecauseSplit r sp) = "from splitting:" <+> PP.align
-    (PP.sep [pretty sp, "originally:" <+> PP.indent 4 (pretty r)])
-  pretty (Instantiated s t r) = "from instantiation of:" <+> PP.align
-    (PP.sep
-      [ "from instantiating scheme:" <+> pretty s
-      , "into type:" <+> pretty t
-      , PP.indent 4 $ pretty r
-      ]
-    )
+  pretty (Instantiated s t r) = "from instantiation of:" <+> PP.align (PP.sep ["from instantiating scheme:" <+> pretty s, "into type:" <+> pretty t, PP.indent 4 $ pretty r])
   pretty BecauseCloseOver     = "from closing over a type"
   pretty BecauseInstantiate   = "from instantiation of a predicate"
   pretty BecauseWkn           = "from a [Wkn] rule"
