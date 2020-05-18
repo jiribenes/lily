@@ -268,6 +268,7 @@ desugarExpr cursor = case cursorKind cursor of
 
   IntegerLiteral        -> desugarLiteral cursor
   CharacterLiteral      -> desugarLiteral cursor
+  StringLiteral         -> desugarLiteral cursor
   CXXBoolLiteralExpr    -> desugarLiteral cursor
   CXXNullPtrLiteralExpr -> pure $ Builtin cursor BuiltinNullPtr
 
