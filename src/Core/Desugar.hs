@@ -387,9 +387,19 @@ desugarBlockOne defaultResult cursor = case cursorKind cursor of
     pure $ \rest -> LetIn cursor (Name "_") setter rest
 
   CompoundStmt -> do
-    block <- desugarBlockCont defaultResult
-                              (fromJust $ T.matchKind @ 'CompoundStmt cursor)
-    pure $ \rest -> block rest
+    -- TODO: we're throwing away some possible semantic information here!
+    -- in the following case:
+    --
+    -- ```
+    -- int x = 3;
+    -- {
+    --   int y = 4;
+    --   return y;
+    -- }
+    -- ```
+    block <- desugarBlock defaultResult
+                          (fromJust $ T.matchKind @ 'CompoundStmt cursor)
+    pure $ \rest -> LetIn cursor (Name "_") block rest
 
   other -> do
     -- best effort 
