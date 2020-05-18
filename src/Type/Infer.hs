@@ -349,7 +349,8 @@ infer expr = case expr of
     (as1, t1, cs1) <- infer e1
     (as2, t2, cs2) <- infer e2
     monos          <- ask
-    tv             <- freshType StarKind
+    -- Disabled, see 'Note' below
+    -- tv             <- freshType StarKind
     let preds =
           because (BecauseExpr expr)
             <$> (nub $ unrestricted (as1 `A.intersection` as2) <> wkn x t1 as2) -- Q in paper
@@ -362,7 +363,8 @@ infer expr = case expr of
       <> [ CImpInst (BecauseExpr expr) t' (TVar `S.map` monos) t1
          | t' <- A.lookup x as2
          ]
-      <> [ CEq (BecauseExpr expr) tv t' | t' <- A.lookup x as2 ] -- This is for the wkn condition, as we need a new type variable
+      -- Note: This rule is disabled because I'm not sure it's needed TODO TODO
+      -- <> [ CEq (BecauseExpr expr) tv t' | t' <- A.lookup x as2 ] -- This is for the wkn condition, as we need a new type variable
       <> preds
       )
 
