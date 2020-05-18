@@ -88,14 +88,29 @@ prettyTypeApplication typ       = "@" <> pretty typ
 type Expr = Expr' Type Cursor
 type CursorExpr t = Expr' t Cursor
 
+-- | Takes an expression and peels off the initial 'Lam's
+-- and gathers their names, leaving just the proper expression.
+--
+-- This is used for pretty printing a 'TopLevel' 'Let' expression.
+gatherArguments :: Expr' t c -> ([Name], Expr' t c)
+gatherArguments expr = go [] expr & _1 %~ reverse
+ where
+  go names (Lam _ n e) = go (n : names) e
+  go names e           = (names, e)
+
 data Let' t c = Let !c !Name !(Expr' t c)
   deriving stock (Eq, Ord, Show, Functor)
 
 type Let = Let' Type Cursor
 
 instance Pretty t => Pretty (Let' t Cursor) where
-  pretty (Let _ name expr) =
-    "let" <+> pretty name <+> "=" <+> PP.hang 4 (pretty expr)
+  pretty (Let _ name expr) = "let" <+> PP.align
+    (PP.sep [pretty name <> prettyArgNames <+> "=", PP.hang 4 (pretty restExpr)]
+    )
+   where
+    (argNames, restExpr) = gatherArguments expr
+    prettyArgNames =
+      if null argNames then "" else PP.space <> PP.hsep (pretty <$> argNames)
 
 data StructField' t c = StructField !c !t !Name
   deriving stock (Eq, Ord, Show, Functor)
