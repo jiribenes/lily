@@ -38,7 +38,7 @@ instance Pretty SolveError where
 
 type Solve a = ReaderT SolveEnv (FreshT Name (Except SolveError)) a
 
-data SolveEnv = SolveEnv { _classEnv :: C.ClassEnv}
+data SolveEnv = SolveEnv { _solveClassEnv :: C.ClassEnv}
 makeClassy ''SolveEnv
 
 runSolveT
@@ -117,7 +117,7 @@ solve cs
   | all (not . solvable) (chooseOne cs) = pure (emptySubst, cs)
   | otherwise = {-traceShow ("constraints left : ", pretty cs) $-}
                 do
-    env <- view classEnv
+    env <- view solveClassEnv
     solve' $ nextSolvable $ simplifyMany env cs
 
 solve' :: (Constraint, [Constraint]) -> Solve (Subst, [Constraint])
