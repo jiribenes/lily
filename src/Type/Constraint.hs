@@ -112,7 +112,6 @@ because r' c = c & reasonL %~ (\r -> CombinedReason r r')
 data Constraint = CEq Reason Type Type
                 | CExpInst Reason Type Scheme
                 | CImpInst Reason Type (S.Set Type) Type
---                | CCtor Reason Name Type -- new addition: `is constructor of`
                 | CIn Reason Name (NonEmpty Type)
                 deriving stock (Show)
 
@@ -144,26 +143,28 @@ instance Pretty Constraint where
   pretty (CEq      _ x y) = pretty x <+> "~" <+> pretty y
   pretty (CExpInst _ t s) = pretty t <+> "≼" <+> pretty s
   pretty (CImpInst _ t1 mono t2) =
-    pretty t1 <+> "≼{" <+> pretty (S.toList mono) <+> "}" <+> pretty t2
---  pretty (CCtor _ name t ) = pretty name <+> "c" <+> pretty t
-  pretty (CIn _ name ts) = pretty name <+> PP.hsep (NE.toList $ pretty <$> ts)
+    pretty t1
+      <+> "≼{"
+      <>  PP.concatWith (PP.surround ", ") (pretty <$> S.toList mono)
+      <>  "}"
+      <+> pretty t2
+  pretty (CIn _ name ts) =
+    pretty name <+> PP.hsep (NE.toList $ prettyTypeParenIfAp <$> ts)
 
 instance ActiveTypeVars Constraint where
   atv (CEq _ t1 t2) = ftv t1 `S.union` ftv t2
   atv (CImpInst _ t1 monos t2) =
     ftv t1 `S.union` (ftv monos `S.intersection` ftv t2)
-  atv (CExpInst _ t s ) = ftv t `S.union` ftv s
---  atv (CCtor    _ n t ) = ftv t
+  atv (CExpInst _ t s   ) = ftv t `S.union` ftv s
   atv (CHasField _ x r a) = ftv x `S.union` ftv r -- TODO: this is a temporary hack, this should probably be in the Type.Class module handled properly
-  atv (CIn      _ _ ts) = foldr1 S.union (ftv <$> ts) -- S.empty  -- this should be correct as we don't really work with these
+  atv (CIn _ _ ts       ) = foldr1 S.union (ftv <$> ts)  -- this should be correct as we don't really work with these
 
 instance Substitutable Constraint where
   apply sub (CEq      r t1 t2) = CEq r (apply sub t1) (apply sub t2)
   apply sub (CExpInst r t  s ) = CExpInst r (apply sub t) (apply sub s)
   apply sub (CImpInst r t1 monos t2) =
     CImpInst r (apply sub t1) (apply sub monos) (apply sub t2)
---  apply sub (CCtor r name t ) = CCtor r name (apply sub t)
-  apply sub (CIn r name ts) = CIn r name (apply sub ts) -- the fmap shouldn't be needed, just making sure!
+  apply sub (CIn r name ts) = CIn r name (apply sub ts)
 
 -- these patterns are bidirectional in this weird way
 -- only because of using OverloadedLists
