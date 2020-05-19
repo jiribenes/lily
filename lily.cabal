@@ -17,7 +17,7 @@ source-repository head
   location:         https://github.com/jiribenes/lily.git
 
 common common-options
-  build-depends:       base >= 4.13 && < 4.14, clang-pure >= 0.2.1.0, lens, containers, unordered-containers, bytestring, mtl, transformers, text, prettyprinter
+  build-depends:       base >= 4.13 && < 4.14, clang-pure >= 0.2.1.0, lens, containers, unordered-containers, bytestring, mtl, transformers, text, prettyprinter, optparse-applicative, directory
   
   ghc-options:         -Wall
                        -Wcompat
@@ -39,7 +39,7 @@ common common-options
 library
   import:              common-options
   hs-source-dirs:      src
-  exposed-modules:     Lily
+  exposed-modules:     Lily, Options
   other-modules:       Control.Monad.Fresh, 
                        Control.Lens.NonEmpty, 
                        Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, Clang.Struct, Clang.MemberParser,
@@ -53,7 +53,7 @@ executable lily
   import:              common-options
   hs-source-dirs:      app
   main-is:             Main.hs
-  build-depends:       lily, directory
+  build-depends:       lily
   ghc-options:         -threaded
                        -rtsopts
                        -with-rtsopts=-N

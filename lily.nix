@@ -1,6 +1,6 @@
 { mkDerivation, base, bytestring, clang-pure, containers, directory
-, lens, mtl, prettyprinter, stdenv, text, transformers
-, unordered-containers
+, lens, mtl, optparse-applicative, prettyprinter, stdenv, text
+, transformers, unordered-containers
 }:
 mkDerivation {
   pname = "lily";
@@ -9,16 +9,19 @@ mkDerivation {
   isLibrary = true;
   isExecutable = true;
   libraryHaskellDepends = [
-    base bytestring clang-pure containers lens mtl prettyprinter text
-    transformers unordered-containers
+    base bytestring clang-pure containers directory lens mtl
+    optparse-applicative prettyprinter text transformers
+    unordered-containers
   ];
   executableHaskellDepends = [
     base bytestring clang-pure containers directory lens mtl
-    prettyprinter text transformers unordered-containers
+    optparse-applicative prettyprinter text transformers
+    unordered-containers
   ];
   testHaskellDepends = [
-    base bytestring clang-pure containers lens mtl prettyprinter text
-    transformers unordered-containers
+    base bytestring clang-pure containers directory lens mtl
+    optparse-applicative prettyprinter text transformers
+    unordered-containers
   ];
   description = "C++ linter based on linear types";
   license = "unknown";
