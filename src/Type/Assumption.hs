@@ -63,17 +63,9 @@ notMember x = not . member x
 toSet :: Ord t => Assumption t -> S.Set (Name, t)
 toSet (Assumption a) = S.fromList a
 
--- Note: This has to be a multimap intersection which is a bit weird and unseemly. 
 intersection :: Ord t => Assumption t -> Assumption t -> Assumption t
-intersection (Assumption as) (Assumption bs) = Assumption $ S.toList $ go
-  as
-  bs
-  mempty
- where
-  go (a@(x, _) : xs) ys zs =
-    let filtered = filter ((== x) . fst) ys
-    in  go xs ys $ S.union zs $ S.fromList (a : filtered)
-  go [] _ zs = zs
+intersection as bs =
+  Assumption . S.toList $ S.intersection (toSet as) (toSet bs)
 
 intersectMany :: Ord t => [Assumption t] -> Assumption t
 intersectMany as =
