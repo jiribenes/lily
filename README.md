@@ -16,7 +16,7 @@ it makes everything way, way easier.
 ### Nix
 
 ```
-nix-build release.nix
+nix-build --attr lily release.nix
 ```
 
 The resulting executable is located in `result/bin/`.
@@ -31,3 +31,23 @@ Seek the [Cabal CI workflow](https://github.com/jiribenes/lily/blob/master/.gith
 3) Install my [clang-pure fork](https://github.com/jiribenes/clang-pure) located in the `deps/` folder using _Cabal/Stack_. For more instructions, view the file `DEV.md` in `deps/clang-pure`. Ideally it should be built by `cabal new-build` in the main folder but who knows?
 4) Install this project using _Cabal/Stack_.
 5) Pray that everything worked.
+
+## Docker
+
+Requires Nix, Docker.
+Warning: Creates a ~300MB image.
+
+1. Create and load the image using Nix
+```
+docker load -i $(nix-build --attr docker release.nix)
+```
+
+2. Run the image in current directory
+```
+docker run -itv $PWD:/data lily-docker lily [ARGS...]
+```
+
+_Example usage:_
+```
+docker run -itv $PWD:/data lily-docker lily lint examples/various.cpp
+```
