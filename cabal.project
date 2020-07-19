@@ -1,1 +1,2 @@
 packages: ./deps/clang-pure/, ./lily.cabal
+-- packages: ./lily.cabal

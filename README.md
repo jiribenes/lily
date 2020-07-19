@@ -20,7 +20,43 @@ nix-build --attr lily release.nix
 ```
 
 The resulting executable is located in `result/bin/`.
-If you wish to install it onto your system, use `nix-env -f release.nix -iA lily`.
+If you wish to install it onto your system using Nix,
+use `nix-env -f release.nix -iA lily`.
+
+You may also build a more static version of the executable by using `static-exe`
+instead of `lily` in the commands above.
+
+#### Developing with Nix
+
+Use `nix-shell shell.nix` to create a development shell --
+a shell with all development dependencies such as Cabal, GHC, etc.
+
+You can use normal Cabal commands when in Nix shell
+to work on Lily: 
+
+* To build Lily using Cabal (better for development, incremental builds):
+```
+cabal new-build lily
+```
+
+* To build and run Lily using Cabal with some arguments in `$ARGS`:
+```
+cabal new-run lily -- $ARGS
+```
+
+* To open a GHCi REPL using Cabal:
+```
+cabal new-repl lily
+```
+
+#### Updating dependenies using Niv
+
+The [niv](https://github.com/nmattia/niv) tool is used to
+manage the version of nixpkgs. It is currently pinned
+to a version of nixpkgs for which lily builds and works.
+
+To update the version of nixpkgs, use the command `niv update`
+in the development nix-shell.
 
 ### Cabal/Stack
 
