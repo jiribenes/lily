@@ -23,9 +23,9 @@ data Command = Desugar
   deriving stock (Show, Eq, Ord)
 
 data Options = Options {
+    _optCommand :: !Command,
     _optSource :: !FilePath,
     _optVerbose :: !Bool,
-    _optCommand :: !Command,
     _optOutput :: !(Maybe FilePath),
     _optClangArguments :: ![String]
 } deriving stock (Show, Eq, Ord)
@@ -37,9 +37,9 @@ parseOptions = execParser optionsParser
 optionsParser :: ParserInfo Options
 optionsParser = info
   (    (   Options
-       <$> sourceOption
+       <$> commandOption
+       <*> sourceOption
        <*> verboseOption
-       <*> commandOption
        <*> outputOption
        <*> clangArgumentsOption
        )
@@ -49,14 +49,6 @@ optionsParser = info
     "lily - a research linter for C++ based on linear types"
   )
  where
-  sourceOption :: Parser FilePath
-  sourceOption =
-    strArgument (metavar "SOURCE_FILE" <> help "Path to the source file")
-
-  verboseOption :: Parser Bool
-  verboseOption = switch
-    (short 'v' <> long "verbose" <> help "Verbose (debug) output to stdin")
-
   commandOption  = hsubparser (commandDesugar <> commandInfer <> commandLint)
   commandDesugar = command
     "desugar"
@@ -72,6 +64,14 @@ optionsParser = info
       (pure Lint)
       (progDesc "Desugar the program, infer Core types and lint the C++ file")
     )
+
+  sourceOption :: Parser FilePath
+  sourceOption =
+    strArgument (metavar "SOURCE_FILE" <> help "Path to the source file")
+
+  verboseOption :: Parser Bool
+  verboseOption = switch
+    (short 'v' <> long "verbose" <> help "Verbose (debug) output to stdin")
 
   outputOption :: Parser (Maybe FilePath)
   outputOption = optional $ strOption

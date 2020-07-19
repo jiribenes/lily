@@ -19,7 +19,7 @@ import           Control.Monad.State.Strict
 import           Data.Foldable                  ( Foldable(fold)
                                                 , traverse_
                                                 )
-import           Data.List                      ( nub )
+import           Data.List                      ((\\),  nub )
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( catMaybes )
@@ -33,6 +33,9 @@ import           Data.Traversable               ( for )
 import           Language.C.Clang.Cursor        ( Cursor
                                                 , CursorKind
                                                 )
+import Debug.Trace.Pretty
+
+
 
 import           Clang.OpParser
 import           Control.Monad.Fresh
@@ -66,7 +69,9 @@ instance Pretty InferError where
   pretty (WrongPredicate   p) = "Wrong predicate:" <+> pretty p
   pretty (WrongConstructor n) = "Wrong constructor:" <+> pretty n
   pretty (WrongConstraint cs) =
-    "Wrong constraints:" <+> PP.indent 4 (PP.vsep $ pretty <$> cs)
+    "Wrong constraints:" <+> PP.indent 4 (PP.vsep $ prettyWithReason <$> cs)
+    where
+      prettyWithReason c = pretty (c, c ^. reasonL)
   pretty Weirdness = "Encountered general weirdness! What?"
   pretty UnexpectedParameterDeclarationOutsideFunction
     = "Unexpected parameter declaration outside a function declaration. Is your AST ok?"
@@ -171,11 +176,18 @@ inferType = \case
             <> cs'
     (subst, unsolved) <- go $ cs <> cs'
 
-    -- Ideally, do a difference between these lists, but that's too hard for now
-    -- TODO(jb): ^ I don't understand what I meant by this. Damn.
-    unless (length unsolved == length (toPreds unsolved))
-      $ throwError
-      $ WrongConstraint unsolved
+    -- TODO: Make this prettier and put it also to the recursive part!
+    let isPredicate CIn{} = True
+        isPredicate _     = False
+    
+    let unsolvedNonPredicates = filter (not . isPredicate) unsolved
+    let rest = unsolved \\ unsolvedNonPredicates
+    let isSolvable c = solvable (c, rest)
+    let prettyish x = (x, x ^. reasonL)
+    tracePrettyM (S.toList . atv <$> unsolvedNonPredicates)
+    tracePrettyM (isSolvable <$> unsolvedNonPredicates)
+    tracePrettyM (prettyish <$> unsolved)
+    unless (null unsolvedNonPredicates) $ throwError $ WrongConstraint unsolvedNonPredicates
 
     pure $ M.singleton
       name
@@ -396,16 +408,13 @@ inferBuiltin expr cursor = \case
     BinOpEQ -> do
       tv1      <- freshType StarKind
       tv2      <- freshType StarKind
-      resultTv <- freshType StarKind
 
-      let f = makeFn3 tv1 tv2 resultTv
+      let f = UnArrow tv1 (UnArrow tv2 typeBool)
 
       pure
         ( A.empty
         , f
-        , [ CEq (BecauseExpr expr) resultTv typeBool
-          , CEq (BecauseExpr expr) tv1      tv2
-          ]
+        , [ CEq (BecauseExpr expr) tv1 tv2 ]
         )
 
     BinOpAdd -> do -- TODO: B O I L E R P L A T E

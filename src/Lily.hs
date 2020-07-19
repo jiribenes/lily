@@ -36,9 +36,21 @@ import           Type.Infer                     ( inferTop
                                                 , InferState
                                                 )
 
+includes :: [String]
+includes =
+  ("-I" <>)
+    <$> [ "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/../../../../include/c++/9.3.0"
+        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/../../../../include/c++/9.3.0/x86_64-unknown-linux-gnu"
+        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/../../../../include/c++/9.3.0/backward"
+        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/include"
+        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/include"
+        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/include-fixed"
+        , "/nix/store/2m6n8flsmhvn19b9l3c622y6rzi81y5w-glibc-2.30-dev/include"
+        ]
+
 lily :: Options -> IO ()
 lily opts = do
-  (structs, sccs) <- parseAST opts
+  (structs, sccs) <- parseAST (opts & optClangArguments .~ includes) -- JB hack
 
   toplevels       <- desugar opts (structs, sccs)
   when (opts ^. optCommand == Desugar) exitSuccess
