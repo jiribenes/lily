@@ -28,7 +28,7 @@ import           System.Exit                    ( exitFailure
 import qualified Data.Graph                    as G
 
 import qualified Clang                         as C
-import           Core.Desugar                   ( desugarTopLevel )
+import           Core.Elaboration               ( elaborateTopLevel )
 import           Core.Syntax                    ( TopLevel )
 import           Options
 import           Type.Infer                     ( inferTop
@@ -52,8 +52,8 @@ lily :: Options -> IO ()
 lily opts = do
   (structs, sccs) <- parseAST (opts & optClangArguments .~ includes) -- JB hack
 
-  toplevels       <- desugar opts (structs, sccs)
-  when (opts ^. optCommand == Desugar) exitSuccess
+  toplevels       <- elaborate opts (structs, sccs)
+  when (opts ^. optCommand == Elaborate) exitSuccess
   putStrLn "----------------------"
 
   finalEnv <- infer opts toplevels
@@ -81,16 +81,16 @@ parseAST opts = do
 
   pure (structs, scc)
 
-desugar
+elaborate
   :: Options
   -> ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
   -> IO [TopLevel]
-desugar opts (structs, fnSccs) = case desugarTopLevel structs fnSccs of
+elaborate opts (structs, fnSccs) = case elaborateTopLevel structs fnSccs of
   Left err -> do
-    printError Desugar err
+    printError Elaborate err
     exitFailure
   Right xs -> do
-    when (opts ^. optCommand == Desugar || opts ^. optVerbose) $ do
+    when (opts ^. optCommand == Elaborate || opts ^. optVerbose) $ do
       putDoc $ PP.align $ PP.vcat $ pretty <$> xs
       putStrLn ""
     pure xs

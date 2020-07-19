@@ -17,7 +17,7 @@ where
 import           Control.Lens
 import           Options.Applicative
 
-data Command = Desugar
+data Command = Elaborate
              | Infer
              | Lint
   deriving stock (Show, Eq, Ord)
@@ -49,20 +49,20 @@ optionsParser = info
     "lily - a research linter for C++ based on linear types"
   )
  where
-  commandOption  = hsubparser (commandDesugar <> commandInfer <> commandLint)
-  commandDesugar = command
-    "desugar"
-    (info (pure Desugar) (progDesc "Just desugar the program into Core"))
+  commandOption  = hsubparser (commandElaborate <> commandInfer <> commandLint)
+  commandElaborate = command
+    "elaborate"
+    (info (pure Elaborate) (progDesc "Just elaborate the program into Core"))
   commandInfer = command
     "infer"
     (info (pure Infer)
-          (progDesc "Desugar the program into Core and infer Core types")
+          (progDesc "Elaborate the program into Core and infer Core types")
     )
   commandLint = command
     "lint"
     (info
       (pure Lint)
-      (progDesc "Desugar the program, infer Core types and lint the C++ file")
+      (progDesc "Elaborate the program, infer Core types and lint the C++ file")
     )
 
   sourceOption :: Parser FilePath
