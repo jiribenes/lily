@@ -23,8 +23,10 @@ jobs:
       with:
         submodules: recursive
 
-    - uses: cachix/install-nix-action@v8
+    - uses: cachix/install-nix-action@v10
       name: Setup Nix
+      with:
+        skip_adding_nixpkgs_channel: true # we don't need a nixpkgs channel because we're pinning with Niv anyways!
 
     - name: Build
       run: |
