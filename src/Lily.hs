@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE KindSignatures #-}
@@ -36,6 +37,8 @@ import           Type.Infer                     ( HasInferState
                                                 , typeEnv
                                                 , InferState
                                                 )
+import Lint ( lintProgram, Suggestion(..) )
+
 
 includes :: [String]
 includes =
@@ -61,9 +64,12 @@ lily opts = do
   when (opts ^. optCommand == Infer) exitSuccess
   putStrLn "----------------------"
 
-  when (opts ^. optCommand == Lint) $ do
-    putStrLn "Error: Command 'lint' is not supported yet!"
-    exitFailure
+  suggestions <- lint finalEnv toplevels
+  when (opts ^. optCommand == Lint) exitSuccess
+  putStrLn "----------------------"
+
+  putStrLn "Internal error: Invalid command - You added a new command to Options.hs and forgot to use it in Lily.hs"
+  exitFailure
 
 parseAST :: Options -> IO ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
 parseAST opts = do
@@ -106,6 +112,13 @@ infer opts toplevels = case inferProgram toplevels of
       putDoc $ PP.align $ PP.vcat $ prettyInferState xs
       putStrLn ""
     pure xs
+
+lint :: InferState -> Program -> IO [Suggestion]
+lint is toplevels = do
+  let suggestions = lintProgram is toplevels
+  putDoc $ PP.align $ PP.vcat $ pretty <$> suggestions
+  putStrLn ""
+  pure $ suggestions
 
 -- -------------------------
 

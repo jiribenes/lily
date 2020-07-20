@@ -35,8 +35,6 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 )
 import Debug.Trace.Pretty
 
-
-
 import           Clang.OpParser
 import           Control.Monad.Fresh
 import           Core.Syntax
@@ -44,10 +42,10 @@ import           Name
 import qualified Type.Assumption               as A
 import qualified Type.Class                    as C
 import           Type.Constraint
+import           Type.Fresh
 import           Type.Simplify
 import           Type.Solve
 import           Type.Type
-
 
 -- | Monomorphic variable set
 type InferMonos = S.Set TVar

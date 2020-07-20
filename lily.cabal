@@ -43,10 +43,11 @@ library
   other-modules:       Control.Monad.Fresh, 
                        Control.Lens.NonEmpty, 
                        Clang, Clang.AST, Clang.Function, Clang.OpParser, Clang.Type, Clang.Struct, Clang.MemberParser,
-                       Type.Infer, Type.Solve, Type.Unify, Type.Assumption, Type.Type, Type.Simplify, Type.Constraint, Type.Class,
+                       Type.Infer, Type.Solve, Type.Unify, Type.Assumption, Type.Type, Type.Simplify, Type.Constraint, Type.Fresh, Type.Class,
                        Error, 
                        Core.Elaboration, Core.Syntax, Core.Located, 
                        Name,
+                       Lint,
                        Debug.Trace.Pretty
 
 executable lily

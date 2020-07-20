@@ -6,7 +6,7 @@ where
 
 import qualified Data.ByteString.Char8         as BS
 import           Data.Functor                   ( (<&>) )
-import           Debug.Trace                    ( traceShow )
+import           Debug.Trace                    (traceShowId,  traceShow )
 import           GHC.Stack                      ( HasCallStack )
 import           Language.C.Clang.Type          ( typeElementType
                                                 , typeArgTypes
@@ -20,6 +20,7 @@ import qualified Language.C.Clang.Type         as ClangType
 import           Type.Type
 import           Name                           ( nameFromBS )
 import           Control.Monad                  ( unless )
+import Data.Maybe (fromJust)
 
 
 type ClangType = ClangType.Type
@@ -44,8 +45,12 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
   ClangType.Int    -> pure typeInt
   ClangType.UInt   -> pure typeUInt
   ClangType.Char_S -> pure typeChar
-  ClangType.Pointer ->
-    typePointeeType canonicalClangType >>= fromClangType <&> typePtrOf
+  ClangType.Pointer -> do
+    let canonicalPointee = typeCanonicalType $ fromJust $ typePointeeType canonicalClangType
+    case ClangType.typeKind canonicalPointee of
+      -- special case for function pointers
+      ClangType.FunctionProto -> fromClangType canonicalPointee
+      _ -> fromClangType canonicalPointee <&> typePtrOf
   ClangType.Record -> do
     let name = nameFromBS $ typeSpelling canonicalClangType
     let tc   = TC name StarKind -- TODO: get kind from clang
@@ -72,3 +77,15 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     )
     Nothing
   where canonicalClangType = typeCanonicalType clangType
+
+{- fromClangScheme :: HasCallStack => ClangType -> Maybe Scheme
+fromClangScheme clangType = case ClangType.typeKind canonicalClangType of
+  ClangType.FunctionProto -> do
+    clangArgTypes <- typeArgTypes canonicalClangType
+    resultType    <- fromClangType =<< typeResultType canonicalClangType
+
+    argTypes      <- traverse fromClangType clangArgTypes
+
+    pure $ foldr (\x acc -> typeArrow `TAp` x `TAp` acc) resultType argTypes
+  _ -> undefined
+  where canonicalClangType = typeCanonicalType clangType -}

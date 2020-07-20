@@ -26,3 +26,17 @@ int main() {
     // We just have to throw the error!
     ignored(Box(6, 6));
 }
+
+int retFirst(Box& box) {
+    return box.x;
+}
+
+int retSecond(Box& box) {
+    return box.y;
+}
+
+int boxey(Box& box) {
+    int a = retFirst(box);
+    int b = retSecond(box);
+    return a + b;
+}

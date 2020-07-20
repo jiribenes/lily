@@ -28,6 +28,7 @@ import           Name
 import           Type.Constraint
 import           Type.Type
 import           Type.Unify
+import           Type.Fresh
 import qualified Type.Class                    as C
 
 data SolveError = SolveError Reason UnificationError -- for now, anyways...
@@ -137,7 +138,8 @@ solve' (CImpInst r t1 monos t2, cs) = do
   solve (CExpInst (Generalized r) t1 t2' : cs)
 solve' (CExpInst r t s, cs) = do
   (s' , preds   ) <- instantiate s
-  (sub, unsolved) <- solve $ CEq (Instantiated s s' r) t s' : preds <> cs
+  let cs' = fromPred BecauseInstantiate <$> preds
+  (sub, unsolved) <- solve $ CEq (Instantiated s s' r) t s' : cs' <> cs
   pure (sub, unsolved)
 solve' (CIn{}, _) =
   error
@@ -166,28 +168,8 @@ nextSolvable xs =
                   fromJust . find solvable . chooseOne $ xs
   where allSolvable zs = let ys = chooseOne zs in [ x | x <- ys, solvable x ]
 
-instantiate :: Scheme -> Solve (Type, [Constraint])
-instantiate (Forall xs qt) = do
-  xs' <- traverse (\(TV _ k) -> freshType k) xs
-  let sub         = Subst $ M.fromList $ zip xs xs'
-      preds :=> t = sub `apply` qt
-
-  pure (t, fromPred BecauseInstantiate <$> preds)
-
 generalize :: [Constraint] -> S.Set Type -> Type -> Scheme
 generalize unsolved free t = Forall (S.toList tyVars) (preds :=> t)
  where
   tyVars = ftv t `S.difference` ftv free
   preds  = toPreds $ nub unsolved
-
-freshType :: MonadFresh Name m => Kind -> m Type
-freshType kind = do
-  name <- fresh
-  let tv = TV name kind
-  pure $ TVar tv
-
-freshTypeAndTVar :: MonadFresh Name m => Kind -> m (Type, TVar)
-freshTypeAndTVar kind = do
-  name <- fresh
-  let tv = TV name kind
-  pure (TVar tv, tv)

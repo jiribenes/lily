@@ -2,7 +2,13 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Type.Unify where
+module Type.Unify
+  ( UnificationError(..)
+  , unifies
+  , unifyMany
+  , onewayUnifies
+  )
+where
 
 import           Control.Monad.Except
 import qualified Data.Map                      as M
@@ -13,7 +19,9 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 )
 
 import           Type.Type
+import           Type.Fresh
 import           Name
+import           Control.Monad.Fresh
 
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
@@ -70,7 +78,7 @@ unifies (TAp t1 t2) (TAp t3 t4)        = unifyMany [t1, t2] [t3, t4]
 -- how do we solve that properly? (mutable reborrows)
 
 -- catch-all clause
-unifies t1 t2 = throwError $ UnificationFail t1 t2
+unifies t1          t2                 = throwError $ UnificationFail t1 t2
 
 wrapIn :: MonadError UnificationError m => (Type -> Type) -> m Subst -> m Subst
 wrapIn f s = do
@@ -95,3 +103,14 @@ unifyMany (t : ts) (u : us) = do
   sub2 <- unifyMany (sub1 `apply` ts) (sub1 `apply` us)
   pure (sub2 `compose` sub1)
 unifyMany _ _ = error "unifyMany: the length of lists differs!"
+
+-- | Local-only function for a cheap and dirty instantiation
+dirtyInstantiate :: Monad m => Scheme -> m (Type, [Pred])
+dirtyInstantiate = flip evalFreshT initialFreshState . instantiate
+
+-- TODO TODO TODO finish `preds`!
+onewayUnifies :: MonadError UnificationError m => Scheme -> Type -> m (Subst, [Pred])
+onewayUnifies sch t2 = do
+  (t1, preds) <- dirtyInstantiate sch
+  sub <- t1 `unifies` t2
+  pure $ (sub, sub `apply` preds)

@@ -51,7 +51,7 @@ int* unsafeThingy(int booyah) {
     return &local[booyah];
 }
 
-int compare(int x, int y) {
+bool compare(int x, int y) {
     return x == y;
 }
 
@@ -61,7 +61,6 @@ int compose(IntToInt f, IntToInt g, int x) {
     return f(g(x));
 }
 
-template <typename T, typename U, typename Z>
-T konst(T a, U b) {
+int konst(int a, int b) {
     return a;
 }
