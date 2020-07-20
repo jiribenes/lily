@@ -24,7 +24,6 @@ where
 import           Data.Coerce
 import qualified Data.Set                      as S
 import           Data.List                      ( foldl' )
-import           Data.Containers.ListUtils      ( nubOrd )
 
 import           Name
 

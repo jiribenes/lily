@@ -24,18 +24,13 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 import qualified Data.List.NonEmpty            as NE
 import           Control.Lens
 import qualified Data.Map                      as M
+import qualified Data.Set                      as S
+import           Data.Maybe                     ( isJust )
 
 import           Core.Syntax
 import           Type.Type
 import           Name
 import           Type.Unify
-import           Data.List                      ( find
-                                                , foldl'
-                                                )
-import           Debug.Trace.Pretty
-import qualified Data.Set                      as S
-import           Control.Lens.Extras            ( is )
-import           Data.Maybe                     ( isJust )
 
 -- Assumes that union of '_fdFrom' and '_fdTo' is all of the 'TVar's possible in 'ClassInfo'
 data FunDep = FunDep { _fdFrom :: [TVar], _fdTo :: [TVar] }
@@ -177,30 +172,26 @@ substPred ce p@(IsIn n ts)
     <> "\nof class:\n"
     <> show (pretty cls)
   | otherwise
-  = getAny (fitsInstance p) insts
+  = foldMap (fitsInstance p) insts
  where
   cls   = ce ^?! classes . ix n
   insts = ce ^?! instances . ix n
 
   fitsInstance :: Pred -> ClassInstance -> Maybe Subst
-  fitsInstance p ci
-    | p == ci ^. iResult = Just emptySubst
-    | otherwise = case unifyPreds (ci ^. iResult) p of
-      Left  _             -> Nothing
-      Right s@(Subst sub) -> case cls ^. cFunDeps of
+  fitsInstance pr ci
+    | pr == ci ^. iResult = Just emptySubst
+    | otherwise = case unifyPreds (ci ^. iResult) pr of
+      Left  _ -> Nothing
+      Right s -> case cls ^. cFunDeps of
         Nothing -> Nothing
         Just fd ->
-          let Subst nfSub = substToNormalForm ci
+          let Subst nfSub = substToNormalForm pr
           in  let condition = M.keysSet nfSub == (S.fromList $ fd ^. fdFrom)
               in  if condition then Just s else Nothing
 
-  substToNormalForm ci = case unifyPreds (cls ^. cResult) p of
+  substToNormalForm pr = case unifyPreds (cls ^. cResult) pr of
     Left err -> error $ "Wrong instance, couldn't unify!" <> show (pretty err)
     Right (Subst s) -> Subst $ M.filter (not . isTVar) s
-
-  getAny f xs = case find (\x -> isJust $ f x) xs of
-    Nothing -> Nothing
-    Just x  -> f x
 
 isTVar :: Type -> Bool
 isTVar TVar{} = True

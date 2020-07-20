@@ -31,7 +31,8 @@ import qualified Clang                         as C
 import           Core.Elaboration               ( elaborateTopLevel )
 import           Core.Syntax                    ( TopLevel )
 import           Options
-import           Type.Infer                     ( inferTop
+import           Type.Infer                     ( HasInferState
+                                                , inferTop
                                                 , typeEnv
                                                 , InferState
                                                 )
@@ -117,6 +118,7 @@ printError cmd err = do
   putStrLn ""
   putStrLn "======================"
 
+prettyInferState :: HasInferState s => s -> [PP.Doc ann]
 prettyInferState finalEnv =
   finalEnv ^. typeEnv . to M.toList & each %~ prettify
  where
