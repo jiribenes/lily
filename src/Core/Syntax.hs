@@ -150,6 +150,7 @@ data TopLevel' t c = TLLet !(Let' t c)
 makePrisms ''TopLevel'
 
 type TopLevel = TopLevel' Type Cursor
+type Program = [TopLevel]
 
 instance Pretty t => Pretty (TopLevel' t Cursor) where
   pretty (TLLet l) = pretty l

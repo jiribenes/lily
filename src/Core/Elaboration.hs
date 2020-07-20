@@ -530,7 +530,7 @@ elaborateSCCTopLevel (G.CyclicSCC  cursors) = do
 elaborateTopLevel
   :: [StructCursor]
   -> [G.SCC SomeFunctionCursor]
-  -> Either ElaborationError [TopLevel]
+  -> Either ElaborationError Program
 elaborateTopLevel structs fnSccs = do
   elaborateedStructs <- traverse elaborateStruct structs
   let elaborateEnv = ElaborationEnv elaborateedStructs Nothing

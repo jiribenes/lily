@@ -29,10 +29,10 @@ import qualified Data.Graph                    as G
 
 import qualified Clang                         as C
 import           Core.Elaboration               ( elaborateTopLevel )
-import           Core.Syntax                    ( TopLevel )
+import           Core.Syntax                    ( Program )
 import           Options
 import           Type.Infer                     ( HasInferState
-                                                , inferTop
+                                                , inferProgram
                                                 , typeEnv
                                                 , InferState
                                                 )
@@ -85,7 +85,7 @@ parseAST opts = do
 elaborate
   :: Options
   -> ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
-  -> IO [TopLevel]
+  -> IO Program
 elaborate opts (structs, fnSccs) = case elaborateTopLevel structs fnSccs of
   Left err -> do
     printError Elaborate err
@@ -96,8 +96,8 @@ elaborate opts (structs, fnSccs) = case elaborateTopLevel structs fnSccs of
       putStrLn ""
     pure xs
 
-infer :: Options -> [TopLevel] -> IO InferState
-infer opts toplevels = case inferTop toplevels of
+infer :: Options -> Program -> IO InferState
+infer opts toplevels = case inferProgram toplevels of
   Left err -> do
     printError Infer err
     exitFailure

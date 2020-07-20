@@ -139,8 +139,8 @@ inferTopLevel tl = do
   typeEnv <>= m
 
 -- | This is the top-level function that should be used for inferring a type of something
-inferTop :: [TopLevel] -> Either InferError InferState
-inferTop tls = runInfer $ traverse_ inferTopLevel tls *> get
+inferProgram :: Program -> Either InferError InferState
+inferProgram tls = runInfer $ traverse_ inferTopLevel tls *> get
 
 -- | Infer a 'Subst'itution, list of 'Pred'icates and a 'Type' for a 'TopLevel' declaration
 inferType :: TopLevel -> Infer (M.Map Name (Subst, [Pred], Type))
