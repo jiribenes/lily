@@ -16,12 +16,12 @@ it makes everything way, way easier.
 ### Nix
 
 ```
-nix-build --attr lily release.nix
+nix-build --attr lily default.nix
 ```
 
 The resulting executable is located in `result/bin/`.
 If you wish to install it onto your system using Nix,
-use `nix-env -f release.nix -iA lily`.
+use `nix-env -f default.nix -iA lily`.
 
 You may also build a more static version of the executable by using `static-exe`
 instead of `lily` in the commands above.

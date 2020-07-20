@@ -1,4 +1,5 @@
 let
-  release = import ./release.nix { };
+  # import the ./default.nix file
+  default = import ./default.nix { };
 in
-release.shell
+default.shell # use its shell
