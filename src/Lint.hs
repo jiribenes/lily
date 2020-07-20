@@ -10,7 +10,7 @@ where
 import qualified Data.List.NonEmpty            as NE
 import           Control.Lens
 import qualified Language.C.Clang.Cursor       as C
-import qualified Language.C.Clang as C
+import qualified Language.C.Clang              as C
 import           Data.Text                      ( Text )
 import           Data.Maybe                     ( isNothing
                                                 , fromJust
@@ -25,16 +25,18 @@ import           Core.Syntax
 import           Core.Located
 import           Type.Infer
 import           Type.Type
+import           Type.Constraint
 import qualified Type.Unify                    as U
+import qualified Type.Solve                    as S
 import qualified Clang.Type                    as C
 
 import           Debug.Trace.Pretty -- TODO: remove this!
-import Debug.Trace (traceShow)
+import           Debug.Trace                    ( traceShow )
 
 
 data Suggestion = SuggestionInternalError Text C.Cursor
                 | SuggestionUnificationError U.UnificationError Scheme Type C.Cursor
-                | SuggestionUnifies Subst [Pred] C.Cursor
+                | SuggestionUnsatisfiedPredicate C.Cursor Pred
 
 instance Pretty Suggestion where
   pretty = \case
@@ -56,11 +58,9 @@ instance Pretty Suggestion where
         , "at location: " <+> prettyLocation (loc c)
         ]
       )
-    SuggestionUnifies sub preds c -> PP.align
-       (PP.sep
-        [ "Yay! We have a valid unification!"
-        , pretty sub
-        , "Next: Are the predicates correct?"
+    SuggestionUnsatisfiedPredicate c preds -> PP.align
+      (PP.sep
+        [ "The following predicates could not be satisfied!"
         , pretty preds
         , "at location: " <+> prettyLocation (loc c)
         ]
@@ -81,14 +81,19 @@ lintLet is (Let c _ n _)
   | isNothing clangType
   = [SuggestionInternalError ("Expected a valid type given from Clang") c]
   | otherwise
-  = examine c (fromJust inferredType) (fromJust clangType)
+  = examine is c (fromJust inferredType) (fromJust clangType)
  where
   inferredType = is ^. typeEnv . at n
   clangType    = C.fromClangType =<< C.cursorType c
 
 -- TODO lepsi nazev, dude
-examine :: C.Cursor -> Scheme -> Type -> [Suggestion]
-examine c inferredType clangType =
+examine :: InferState -> C.Cursor -> Scheme -> Type -> [Suggestion]
+examine is c inferredType clangType =
   case runExcept (inferredType `U.onewayUnifies` clangType) of
-    Left  err -> traceShow (C.typeCanonicalType <$> C.cursorType c) $ [SuggestionUnificationError err inferredType clangType c]
-    Right (sub, preds) -> [SuggestionUnifies sub preds c]
+    Left err ->
+      traceShow (C.typeCanonicalType <$> C.cursorType c)
+        $ [SuggestionUnificationError err inferredType clangType c]
+    Right (_, preds) ->
+      let simplifiedPredicates =
+              S.simplifyMany (is ^. classEnv) (S.fromPred JustBecause <$> preds)
+      in  fmap (SuggestionUnsatisfiedPredicate c) $ S.toPreds simplifiedPredicates

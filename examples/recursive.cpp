@@ -57,11 +57,6 @@ int uses_even(int n) {
     return even(n) * 2;
 }
 
-template <typename T, typename U, typename Z>
-T konst(T a, U b) {
-    return a;
-}
-
 int fibbonacci(int n) {
    if (n == 0){
       return 0;

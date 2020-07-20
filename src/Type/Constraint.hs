@@ -48,6 +48,7 @@ data Reason = BecauseExpr Expr
             | BecauseFunDep
             | FromClang Type Expr
             | CombinedReason Reason Reason
+            | JustBecause
             deriving stock (Eq, Show)
 
 instance Pretty Reason where
@@ -105,6 +106,7 @@ instance Pretty Reason where
     ]
   pretty (CombinedReason first second) =
     PP.align $ PP.sep [pretty first, pretty second]
+  pretty JustBecause = "because I said so (internal!)"
 
 because :: Reason -> Constraint -> Constraint
 because r' c = c & reasonL %~ (\r -> CombinedReason r r')

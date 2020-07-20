@@ -19,7 +19,9 @@ import           Control.Monad.State.Strict
 import           Data.Foldable                  ( Foldable(fold)
                                                 , traverse_
                                                 )
-import           Data.List                      ((\\),  nub )
+import           Data.List                      ( (\\)
+                                                , nub
+                                                )
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( catMaybes )
@@ -33,7 +35,7 @@ import           Data.Traversable               ( for )
 import           Language.C.Clang.Cursor        ( Cursor
                                                 , CursorKind
                                                 )
-import Debug.Trace.Pretty
+import           Debug.Trace.Pretty
 
 import           Clang.OpParser
 import           Control.Monad.Fresh
@@ -64,12 +66,11 @@ instance Pretty InferError where
   pretty (FromSolve x) = pretty x
   pretty (UnboundVariables as) =
     "Not in scope:" <+> PP.indent 4 (PP.vsep $ pretty <$> as)
-  pretty (WrongPredicate   p) = "Wrong predicate:" <+> pretty p
-  pretty (WrongConstructor n) = "Wrong constructor:" <+> pretty n
-  pretty (WrongConstraint cs) =
-    "Wrong constraints:" <+> PP.indent 4 (PP.vsep $ prettyWithReason <$> cs)
-    where
-      prettyWithReason c = pretty (c, c ^. reasonL)
+  pretty (WrongPredicate   p ) = "Wrong predicate:" <+> pretty p
+  pretty (WrongConstructor n ) = "Wrong constructor:" <+> pretty n
+  pretty (WrongConstraint  cs) = "Wrong constraints:"
+    <+> PP.indent 4 (PP.vsep $ prettyWithReason <$> cs)
+    where prettyWithReason c = pretty (c, c ^. reasonL)
   pretty Weirdness = "Encountered general weirdness! What?"
   pretty UnexpectedParameterDeclarationOutsideFunction
     = "Unexpected parameter declaration outside a function declaration. Is your AST ok?"
@@ -177,15 +178,16 @@ inferType = \case
     -- TODO: Make this prettier and put it also to the recursive part!
     let isPredicate CIn{} = True
         isPredicate _     = False
-    
+
     let unsolvedNonPredicates = filter (not . isPredicate) unsolved
-    let rest = unsolved \\ unsolvedNonPredicates
+    let rest                  = unsolved \\ unsolvedNonPredicates
     let isSolvable c = solvable (c, rest)
     let prettyish x = (x, x ^. reasonL)
     tracePrettyM (S.toList . atv <$> unsolvedNonPredicates)
     tracePrettyM (isSolvable <$> unsolvedNonPredicates)
     tracePrettyM (prettyish <$> unsolved)
-    unless (null unsolvedNonPredicates) $ throwError $ WrongConstraint unsolvedNonPredicates
+    unless (null unsolvedNonPredicates) $ throwError $ WrongConstraint
+      unsolvedNonPredicates
 
     pure $ M.singleton
       name
@@ -404,57 +406,28 @@ inferBuiltin expr cursor = \case
   BuiltinBinOp bo resultTyp opTyp -> case bo of
     -- TODO: scrap the boilerplate, use resultTyp and opTyp directly!
     BinOpEQ -> do
-      tv1      <- freshType StarKind
-      tv2      <- freshType StarKind
+      tv1 <- freshType StarKind
+      tv2 <- freshType StarKind
 
       let f = UnArrow tv1 (UnArrow tv2 typeBool)
 
-      pure
-        ( A.empty
-        , f
-        , [ CEq (BecauseExpr expr) tv1 tv2 ]
-        )
+      pure (A.empty, f, [CEq (BecauseExpr expr) tv1 tv2])
 
-    BinOpAdd -> do -- TODO: B O I L E R P L A T E
+    _ -> do
       tv1      <- freshType StarKind
       tv2      <- freshType StarKind
       resultTv <- freshType StarKind
 
-      let f = makeFn3 tv1 tv2 resultTv
+      let f = UnArrow tv1 (UnArrow tv2 resultTv)
 
       pure
         ( A.empty
         , f
-        , [CEq (BecauseExpr expr) resultTv tv1, CEq (BecauseExpr expr) tv1 tv2]
+        , [ CEq (FromClang resultTyp expr) resultTv resultTyp
+          , CEq (BecauseExpr expr)         tv1      tv2
+          , CEq (FromClang opTyp expr)     tv1      opTyp
+          ]
         )
-
-    BinOpSub -> do -- TODO: B O I L E R P L A T E
-      tv1      <- freshType StarKind
-      tv2      <- freshType StarKind
-      resultTv <- freshType StarKind
-
-      let f = makeFn3 tv1 tv2 resultTv
-
-      pure
-        ( A.empty
-        , f
-        , [CEq (BecauseExpr expr) resultTv tv1, CEq (BecauseExpr expr) tv1 tv2]
-        )
-
-    BinOpMul -> do
-      tv1      <- freshType StarKind
-      tv2      <- freshType StarKind
-      resultTv <- freshType StarKind
-
-      let f = makeFn3 tv1 tv2 resultTv
-
-      pure
-        ( A.empty
-        , f
-        , [CEq (BecauseExpr expr) resultTv tv1, CEq (BecauseExpr expr) tv1 tv2]
-        )
-
-    _ -> error "not implemented yet"
   BuiltinUnOp uo resultTyp opTyp -> case uo of
     -- TODO: scrap the boilerplate _for most!_, use resultTyp and opTyp directly!
     UnOpAddrOf -> do
@@ -470,7 +443,19 @@ inferBuiltin expr cursor = \case
       let f = makeFn2 (typePtrOf tv) resultType
 
       pure (A.empty, f, [CEq (BecauseExpr expr) tv resultType])
-    other -> error $ "not implemented yet: " <> show other
+    _ -> do
+      tv1      <- freshType StarKind
+      resultTv <- freshType StarKind
+
+      let f = UnArrow tv1 resultTv
+
+      pure
+        ( A.empty
+        , f
+        , [ CEq (FromClang resultTyp expr) resultTv resultTyp
+          , CEq (FromClang opTyp expr)     tv1      opTyp
+          ]
+        )
   BuiltinMemberRef fieldNameType -> do
     recordType <- freshType StarKind
     memberType <- freshType StarKind

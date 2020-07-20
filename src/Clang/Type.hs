@@ -22,6 +22,7 @@ import           Name                           ( nameFromBS )
 import           Control.Monad                  ( unless )
 import Data.Maybe (fromJust)
 
+data Ref = LRef | RRef | UnspecifiedRef
 
 type ClangType = ClangType.Type
 
@@ -30,7 +31,7 @@ type ClangType = ClangType.Type
 -- which indicates an unrecoverable error in Clang itself.
 -- We'll just error in that case since what else is to do there?
 fromClangType :: HasCallStack => ClangType -> Maybe Type
-fromClangType clangType = case ClangType.typeKind canonicalClangType of
+fromClangType clangType = case traceShowId $ ClangType.typeKind canonicalClangType of
   ClangType.Invalid   -> error "internal error: invalid Clang type!"
   ClangType.Unexposed -> traceShow
     (  "Found type: "
@@ -61,9 +62,9 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     clangArgTypes <- typeArgTypes canonicalClangType
     resultType    <- fromClangType =<< typeResultType canonicalClangType
 
-    argTypes      <- traverse fromClangType clangArgTypes
+    argTypes      <- traverse getArgumentType clangArgTypes
 
-    pure $ foldr (\x acc -> typeArrow `TAp` x `TAp` acc) resultType argTypes
+    pure $ foldr (\(ty, ref) acc -> (refToArrow ref) `TAp` ty `TAp` acc) resultType argTypes
   ClangType.ConstantArray ->
     typeElementType canonicalClangType >>= fromClangType <&> typeListOf
   other -> traceShow
@@ -78,14 +79,22 @@ fromClangType clangType = case ClangType.typeKind canonicalClangType of
     Nothing
   where canonicalClangType = typeCanonicalType clangType
 
-{- fromClangScheme :: HasCallStack => ClangType -> Maybe Scheme
-fromClangScheme clangType = case ClangType.typeKind canonicalClangType of
-  ClangType.FunctionProto -> do
-    clangArgTypes <- typeArgTypes canonicalClangType
-    resultType    <- fromClangType =<< typeResultType canonicalClangType
+refToArrow :: Ref -> Type
+refToArrow RRef = typeLinArrow
+refToArrow LRef = typeUnArrow
+refToArrow UnspecifiedRef = typeLinArrow
 
-    argTypes      <- traverse fromClangType clangArgTypes
-
-    pure $ foldr (\x acc -> typeArrow `TAp` x `TAp` acc) resultType argTypes
-  _ -> undefined
-  where canonicalClangType = typeCanonicalType clangType -}
+getArgumentType :: HasCallStack => ClangType -> Maybe (Type, Ref)
+getArgumentType clangType = case ClangType.typeKind canonicalClangType of
+  ClangType.LValueReference -> do
+    let maybePointee = typePointeeType canonicalClangType
+    ty <- fromClangType =<< maybePointee
+    pure (ty, LRef)
+  ClangType.RValueReference -> do
+    let maybePointee = typePointeeType canonicalClangType
+    ty <- fromClangType =<< maybePointee
+    pure (ty, LRef) 
+  other -> do
+    ty <- fromClangType clangType
+    pure (ty, UnspecifiedRef)
+  where canonicalClangType = typeCanonicalType clangType
