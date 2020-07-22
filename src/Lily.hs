@@ -37,7 +37,9 @@ import           Type.Infer                     ( HasInferState
                                                 , typeEnv
                                                 , InferState
                                                 )
-import Lint ( lintProgram, Suggestion(..) )
+import           Lint                           ( lintProgram
+                                                , Suggestion(..)
+                                                )
 
 
 includes :: [String]
@@ -68,7 +70,8 @@ lily opts = do
   when (opts ^. optCommand == Lint) exitSuccess
   putStrLn "----------------------"
 
-  putStrLn "Internal error: Invalid command - You added a new command to Options.hs and forgot to use it in Lily.hs"
+  putStrLn
+    "Internal error: Invalid command - You added a new command to Options.hs and forgot to use it in Lily.hs"
   exitFailure
 
 parseAST :: Options -> IO ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
@@ -84,14 +87,15 @@ parseAST opts = do
 
   when (opts ^. optVerbose) $ C.printAST tu
   let structs = C.structs tu
-  let scc     = C.recursiveComponents tu
+  scc <- case C.recursiveComponents tu of
+    Just scc' -> pure scc'
+    Nothing ->
+      putStrLn "Error: all functions must have a valid body!" *> exitFailure
 
   pure (structs, scc)
 
 elaborate
-  :: Options
-  -> ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
-  -> IO Program
+  :: Options -> ([C.StructCursor], [G.SCC C.SomeFunctionCursor]) -> IO Program
 elaborate opts (structs, fnSccs) = case elaborateTopLevel structs fnSccs of
   Left err -> do
     printError Elaborate err
