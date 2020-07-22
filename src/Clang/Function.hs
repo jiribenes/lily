@@ -150,22 +150,17 @@ normalize = fmap representGroup . groupByUSR
 
   groupByUSR = groupBy ((==) `on` view _2) . sortOn (view _2)
 
-recursiveComponents :: TranslationUnit -> Maybe [G.SCC SomeFunctionCursor]
-recursiveComponents tu = do
-  let maybeGraphNodes = translationUnitCursor tu
-          ^.. allFunctions
-          .   to intoGraphNode
-  
-  graphNodes <- sequenceA maybeGraphNodes
-
-  graphNodes & normalize
-             & G.stronglyConnComp
-             & pure
+recursiveComponents :: TranslationUnit -> [G.SCC SomeFunctionCursor]
+recursiveComponents tu =
+  translationUnitCursor tu
+    ^.. allFunctions
+    .   to intoGraphNode
+    &   normalize
+    &   G.stronglyConnComp
  where
-  intoGraphNode :: SomeFunctionCursor -> Maybe FunctionGraphNode
-  intoGraphNode fnDecl = do
-    functionBody <- getFunctionBody fnDecl tu
-    pure ( functionBody
-        , fnDecl & someUSR
-        , (fnDecl & unwrapSomeFunction) ^.. calledFunctions . to someUSR
-        )
+  intoGraphNode :: SomeFunctionCursor -> FunctionGraphNode
+  intoGraphNode fnDecl =
+    ( getFunctionBody fnDecl tu & fromJust
+    , fnDecl & someUSR
+    , (fnDecl & unwrapSomeFunction) ^.. calledFunctions . to someUSR
+    )
