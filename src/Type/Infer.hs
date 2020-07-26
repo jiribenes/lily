@@ -89,13 +89,15 @@ makeClassy ''InferState
 initialInferState :: InferState
 initialInferState =
   InferState C.initialClassEnv
-    $   M.singleton "std::move"
-    $   Forall [varA]
-    $   []
-    :=> LinArrow a a
+    $   M.singleton "std::move" -- move is not a linear function, that would make it _single-use_ in the whole function! that is NOT desired!
+    $   Forall [varA, varF]
+    $   [PFun f]
+    :=> (f `TAp` a `TAp` a)
  where
   varA = TV "a" StarKind
+  varF = TV "f" arrowKind
   a    = TVar varA
+  f    = TVar varF
 
 -- | Infer monad allows to: read monomorphic variables, create fresh variables and raise errors
 newtype Infer a = Infer { unInfer :: ReaderT InferMonos (StateT InferState (FreshT Name (Except InferError))) a }
