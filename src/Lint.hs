@@ -74,8 +74,17 @@ lintTopLevel _  (TLStruct       _ ) = []
 lintTopLevel is (TLLet          l ) = lintLet is l
 lintTopLevel is (TLLetRecursive ls) = (NE.toList ls) >>= lintLet is
 
+-- Note: This function does _NOT_ lint
+-- constructors as we have no reliable way
+-- of guessing that a function is actually a
+-- constructor when calling it. 
+--
+-- This means that it needs to have both
+-- type @() -> Struct@ and @()@ which is what
+-- Clang thinks it should have. It's bonkers.
 lintLet :: InferState -> Let -> [Suggestion]
-lintLet is (Let c _ n _)
+lintLet is (Let _ LetConstructor _ _) = []
+lintLet is (Let c LetFunction n _)
   | isNothing inferredType
   = [SuggestionInternalError ("Expected inferred type but haven't found any") c]
   | isNothing clangType
