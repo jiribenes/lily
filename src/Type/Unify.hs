@@ -124,7 +124,9 @@ onewayUnifies sch t2 = do
   locallyUnifies (TAp t1 t2) (TAp t3 t4) = locallyUnifyMany [t1, t2] [t3, t4]
   locallyUnifies t1          (LRef t2  )        = locallyUnifies t1 t2
   locallyUnifies t1          (RRef t2  )        = locallyUnifies t1 t2
-  locallyUnifies t1          t2                 = throwError $ UnificationFail t1 t2
+  locallyUnifies (LRef t1)   t2                 = locallyUnifies t1 t2
+  locallyUnifies (RRef t1)   t2                 = locallyUnifies t1 t2
+  locallyUnifies t1 t2 = throwError $ UnificationFail t1 t2
 
   locallyUnifyMany []       []       = pure emptySubst
   locallyUnifyMany (t : ts) (u : us) = do
