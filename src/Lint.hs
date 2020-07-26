@@ -110,7 +110,7 @@ instance Pretty Suggestion where
         , "at location:" <+> prettyLocation (loc c)
         , ""
         , "This means that a value of type '" <> pretty t <> "' is either duplicated or discarded!"
-        , "Note that this might be a false positive -- this might be allowed for your type!"
+        , "Note that this might be a false positive -- this might be fine for your type, especially if it's a small type!"
         , ""
         ]
       )
