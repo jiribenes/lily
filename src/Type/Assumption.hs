@@ -27,6 +27,8 @@ import           Data.List                      ( foldl' )
 
 import           Name
 
+import Debug.Trace
+
 -- | Multimap of assumptions 
 newtype Assumption t = Assumption { unAssumption :: [(Name, t)] }
     deriving newtype (Eq, Ord, Show, Semigroup, Monoid)
@@ -62,9 +64,25 @@ notMember x = not . member x
 toSet :: Ord t => Assumption t -> S.Set (Name, t)
 toSet (Assumption a) = S.fromList a
 
+-- | This is not a normal intersection!
+--
+-- It has a key property that @(x, t)@ is in the resulting assumption multiset
+-- iff @x@ is in both assumption sets in the input.
+--
+-- This corresponds closely to Morris' operation where he
+-- restricts the typing context \Gamma to just the set of seen
+-- variables \Sigma \cap \Sigma' in his Algorithm M variant.
 intersection :: Ord t => Assumption t -> Assumption t -> Assumption t
-intersection as bs =
-  Assumption . S.toList $ S.intersection (toSet as) (toSet bs)
+intersection (Assumption as) (Assumption bs) = Assumption $ S.toList $ go
+  as
+  bs
+  mempty
+ where
+  go (a@(x, _) : xs) ys zs =
+    let filtered = filter ((== x) . fst) ys in
+        let zs' = if null filtered then zs else S.union zs $ S.fromList (a : filtered) in
+            go xs ys zs'
+  go [] _ zs = zs
 
 intersectMany :: Ord t => [Assumption t] -> Assumption t
 intersectMany as =

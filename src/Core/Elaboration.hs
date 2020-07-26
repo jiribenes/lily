@@ -64,6 +64,7 @@ data ElaborationError = WeirdFunctionBody Location
                   | NotImplementedYet Location
                   | ExpectedValidStruct Location
                   | WeirdNewOperator Location
+                  | WeirdDeleteOperator Location
                   | ExpectedReferencedExpr Location
                   | ExpectedThis Location
                   | ExpectedNamed Location
@@ -106,6 +107,8 @@ instance Pretty ElaborationError where
     ExpectedValidStruct l -> "Invalid struct at: " <+> prettyLocation l
     WeirdNewOperator l ->
       "Invalid form of the `new` operator at: " <+> prettyLocation l
+    WeirdDeleteOperator l ->
+      "Invalid form of the `delete` operator at: " <+> prettyLocation l
     ExpectedReferencedExpr l -> PP.align
       (PP.sep
         [ "Expected that expression is referencing another (possibly a function call?)"
@@ -202,7 +205,7 @@ elaborateExpr cursor = case cursorKind cursor of
                 case cursorChildren cursor of
     [] -> do
       typ <- extractType cursor
-      pure $ Builtin cursor (BuiltinNew typ)
+      pure $ App cursor (Builtin cursor (BuiltinNew typ)) (Builtin cursor BuiltinUnit)
     xs -> do
       typ       <- extractType cursor
       child     <- note (WeirdNewOperator $ loc cursor) $ xs ^? _last
@@ -210,6 +213,12 @@ elaborateExpr cursor = case cursorKind cursor of
       childExpr <- elaborateExpr child
 
       pure $ App cursor (Builtin cursor (BuiltinNewArray typ)) childExpr
+  
+  CXXDeleteExpr -> case cursorChildren cursor of
+    [child]  -> do
+      expr <- elaborateExpr child
+      pure $ App cursor (Builtin cursor BuiltinDelete) expr
+    _ -> throwError $ WeirdDeleteOperator $ loc cursor
 
   ArraySubscriptExpr -> do
     let [left, right] = cursorChildren cursor

@@ -63,8 +63,8 @@ simplify env (CGeq r other (f `TAp` _ `TAp` _)) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) other f]
 simplify env (CGeq r (f `TAp` _ `TAp` _) other) cs
   | findConstraint env cs (CFun r f) = [CGeq (Simplified r) f other]
-simplify env (CUn r (f `TAp` _ `TAp` _)) cs | findConstraint env cs (CFun r f) =
-  [CUn (Simplified r) f]
+simplify env (CUn r (f `TAp` _ `TAp` _)) cs | findConstraint env cs (CFun r f) = [CUn (Simplified r) f]
+                                            | f == typeUnArrow = []
 simplify env c@(CIn _ n ts) cs = case C.substPred env $ IsIn n ts of
   Nothing        -> simplifyGeq (findConstraint env cs) c
   Just (Subst s) -> case M.toList s of

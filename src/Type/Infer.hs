@@ -36,6 +36,7 @@ import           Language.C.Clang.Cursor        ( Cursor
                                                 , CursorKind
                                                 )
 import           Debug.Trace.Pretty
+import           Debug.Trace
 
 import           Clang.OpParser
 import           Control.Monad.Fresh
@@ -347,8 +348,10 @@ infer expr = case expr of
     tv             <- freshType StarKind
 
     (f, fPreds)    <- freshFun expr -- fresh arrow kind
-    let preds = nub $ unrestricted $ as1 `A.intersection` as2
+    let as    = as1 `A.intersection` as2
+    let preds = nub $ unrestricted $ as
 
+    traceShowM (as, as1, as2)
     pure
       ( as1 <> as2
       , tv
@@ -365,9 +368,9 @@ infer expr = case expr of
     monos          <- ask
     -- Disabled, see 'Note' below
     -- tv             <- freshType StarKind
+    let as = as1 `A.intersection` as2
     let preds =
-          because (BecauseExpr expr)
-            <$> (nub $ unrestricted (as1 `A.intersection` as2) <> wkn x t1 as2) -- Q in paper
+          because (BecauseExpr expr) <$> (nub $ unrestricted as <> wkn x t1 as2) -- Q in paper
 
     pure
       ( as1 <> as2 `A.remove` x
@@ -386,12 +389,20 @@ infer expr = case expr of
     (as1, t1, cs1) <- infer e1
     (as2, t2, cs2) <- infer e2
     (as3, t3, cs3) <- infer e3
+
+    let as =
+          (as1 `A.intersection` (as2 <> as3))
+            <> (as2 `A.removeMany` (A.keys as3))
+            <> (as3 `A.removeMany` (A.keys as2))
+    let preds = because (BecauseExpr expr) <$> (nub $ unrestricted as)
+
     pure
       ( as1 <> as2 <> as3
       , t2
       , cs1
       <> cs2
       <> cs3
+      <> preds
       <> [ CEq (BecauseIfCondition expr e1)   t1 typeBool
          , CEq (BecauseIfBranches expr e2 e3) t2 t3
          ]
@@ -502,9 +513,25 @@ inferBuiltin expr cursor = \case
 
     pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
   BuiltinNew typ -> do
+    tv       <- freshType StarKind
+    resultTv <- freshType StarKind
+
+    let somePointer = typePtrOf resultTv
+    let f           = makeFn2 tv somePointer
+
+    pure
+      ( A.empty
+      , f
+      , [ CEq (FromClang typ expr) somePointer typ
+        , CEq (BecauseExpr expr)   tv          typeUnit
+        ]
+      )
+  BuiltinDelete -> do
+    tv         <- freshType StarKind
     resultType <- freshType StarKind
 
-    pure (A.empty, resultType, [CEq (FromClang typ expr) typ resultType])
+    let f = UnArrow (typePtrOf tv) resultType
+    pure (A.empty, f, [CEq (BecauseExpr expr) resultType typeUnit])
   BuiltinAssign -> do
     tv          <- freshType StarKind
 

@@ -48,6 +48,7 @@ data BuiltinExpr = BuiltinBinOp !BinOp !Type !Type
                  | BuiltinUnOp !UnOp !Type !Type
                  | BuiltinMemberRef !Type  -- modelled after 'GHC.Records.HasField'
                  | BuiltinNew !Type
+                 | BuiltinDelete
                  | BuiltinNewArray !Type
                  | BuiltinArraySubscript !Type !Type
                  | BuiltinAssign
@@ -70,6 +71,7 @@ instance Pretty BuiltinExpr where
   pretty (BuiltinMemberRef fieldNameType) =
     "#builtin_memberref" <+> prettyTypeApplication fieldNameType
   pretty (BuiltinNew typ) = "#builtin_new" <+> prettyTypeApplication typ
+  pretty BuiltinDelete = "#builtin_delete"
   pretty (BuiltinNewArray typ) =
     "#builtin_new_array" <+> prettyTypeApplication typ
   pretty BuiltinAssign = "#builtin_assign"
