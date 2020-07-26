@@ -23,8 +23,6 @@ import           Type.Type
 import           Name                           ( nameFromBS )
 import           Data.Maybe                     ( fromJust )
 
-data Ref = LRef | RRef | UnspecifiedRef
-
 type ClangType = ClangType.Type
 
 -- Note: This function is technically partial because Clang
@@ -59,15 +57,17 @@ fromClangType clangType =
       let name = nameFromBS $ typeSpelling canonicalClangType
       let tc   = TC name StarKind -- TODO: get kind from clang
       pure (TCon tc)
-    ClangType.LValueReference ->
-      typePointeeType canonicalClangType >>= fromClangType <&> MutRef
+    ClangType.LValueReference -> -- ignore LRef for type inference, see 'getArgumentType' for proper handling during linting
+      typePointeeType canonicalClangType >>= fromClangType
+    ClangType.RValueReference -> -- ignore RRef for type inference, see 'getArgumentType' for proper handling during linting
+      typePointeeType canonicalClangType >>= fromClangType
     ClangType.FunctionProto -> do
       clangArgTypes <- typeArgTypes canonicalClangType
       resultType    <- fromClangType =<< typeResultType canonicalClangType
 
       argTypes      <- traverse getArgumentType clangArgTypes
 
-      pure $ foldr makeArrow resultType argTypes
+      pure $ foldr UnArrow resultType argTypes
     ClangType.ConstantArray ->
       typeElementType canonicalClangType >>= fromClangType <&> typeListOf
     other -> traceShow
@@ -80,26 +80,19 @@ fromClangType clangType =
         ]
       )
       Nothing
- where
-  canonicalClangType = typeCanonicalType clangType
-  makeArrow (ty, ref) = \acc -> refToArrow ref `TAp` ty `TAp` acc
+  where canonicalClangType = typeCanonicalType clangType
 
-refToArrow :: Ref -> Type
-refToArrow RRef           = typeLinArrow
-refToArrow LRef           = typeUnArrow
-refToArrow UnspecifiedRef = typeUnArrow
-
-getArgumentType :: HasCallStack => ClangType -> Maybe (Type, Ref)
+getArgumentType :: HasCallStack => ClangType -> Maybe Type
 getArgumentType clangType = case ClangType.typeKind canonicalClangType of
   ClangType.LValueReference -> do
     let maybePointee = typePointeeType canonicalClangType
     ty <- fromClangType =<< maybePointee
-    pure (ty, LRef)
+    pure (LRef ty)
   ClangType.RValueReference -> do
     let maybePointee = typePointeeType canonicalClangType
     ty <- fromClangType =<< maybePointee
-    pure (ty, LRef)
+    pure (RRef ty)
   _ -> do
     ty <- fromClangType clangType
-    pure (ty, UnspecifiedRef)
+    pure ty
   where canonicalClangType = typeCanonicalType clangType

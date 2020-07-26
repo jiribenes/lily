@@ -112,14 +112,22 @@ typeLinArrow :: Type
 typeLinArrow = TCon conLinArrow
 typeUnArrow :: Type
 typeUnArrow = TCon conUnArrow
-conMutRef :: TCon
-conMutRef = TC "MutRef" $ ArrowKind StarKind StarKind
-typeMutRef :: Type
-typeMutRef = TCon conMutRef
+conLRef :: TCon
+conLRef = TC "LRef" $ ArrowKind StarKind StarKind
+typeLRef :: Type
+typeLRef = TCon conLRef
 
-pattern MutRef :: Type -> Type
-pattern MutRef x <- _ `TAp` x 
-  where MutRef x = typeMutRef `TAp` x
+pattern LRef :: Type -> Type
+pattern LRef x <- _ `TAp` x 
+  where LRef x = typeLRef `TAp` x
+conRRef :: TCon
+conRRef = TC "RRef" $ ArrowKind StarKind StarKind
+typeRRef :: Type
+typeRRef = TCon conRRef
+
+pattern RRef :: Type -> Type
+pattern RRef x <- _ `TAp` x 
+  where RRef x = typeRRef `TAp` x
 
 -- | (typeclass) Predicate 
 data Pred = IsIn !Name (NonEmpty Type) deriving stock (Eq, Show, Ord)

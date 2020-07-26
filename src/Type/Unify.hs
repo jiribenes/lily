@@ -108,9 +108,27 @@ unifyMany _ _ = error "unifyMany: the length of lists differs!"
 dirtyInstantiate :: Monad m => Scheme -> m (Type, [Pred])
 dirtyInstantiate = flip evalFreshT initialFreshState . instantiate
 
--- TODO TODO TODO finish `preds`!
-onewayUnifies :: MonadError UnificationError m => Scheme -> Type -> m (Subst, [Pred])
+onewayUnifies
+  :: MonadError UnificationError m => Scheme -> Type -> m (Subst, [Pred])
 onewayUnifies sch t2 = do
   (t1, preds) <- dirtyInstantiate sch
-  sub <- t1 `unifies` t2
+  sub         <- t1 `locallyUnifies` t2
   pure $ (sub, sub `apply` preds)
+ where
+  locallyUnifies t1 t2
+    | t1 == t2                   = pure emptySubst
+    | typeKind t1 /= typeKind t2 = throwError $ KindMismatch t1 t2
+  locallyUnifies (TCon c1) (TCon c2) | c1 == c2 = pure emptySubst
+  locallyUnifies (TVar tv)   t                  = tv `bind` t
+  locallyUnifies t           (TVar tv  )        = tv `bind` t
+  locallyUnifies (TAp t1 t2) (TAp t3 t4) = locallyUnifyMany [t1, t2] [t3, t4]
+  locallyUnifies t1          (LRef t2  )        = locallyUnifies t1 t2
+  locallyUnifies t1          (RRef t2  )        = locallyUnifies t1 t2
+  locallyUnifies t1          t2                 = throwError $ UnificationFail t1 t2
+
+  locallyUnifyMany []       []       = pure emptySubst
+  locallyUnifyMany (t : ts) (u : us) = do
+    sub1 <- locallyUnifies t u
+    sub2 <- locallyUnifyMany (sub1 `apply` ts) (sub1 `apply` us)
+    pure (sub2 `compose` sub1)
+  locallyUnifyMany _ _ = error "locallyUnifyMany: the length of lists differs!"

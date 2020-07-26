@@ -39,6 +39,7 @@ data Suggestion = SuggestionInternalError Text C.Cursor
                 | SuggestionUnificationError U.UnificationError Scheme Type C.Cursor
                 | SuggestionUnsatisfiedPredicate C.Cursor Pred
                 | SuggestionUnrestrictedPointer C.Cursor Pred
+                | SuggestionUnrestrictedRRef C.Cursor Pred
                 | SuggestionUnrestrictedLinFunction C.Cursor Pred
                 | SuggestionUnrestrictedSomething C.Cursor Pred Type
 
@@ -82,6 +83,16 @@ instance Pretty Suggestion where
         , ""
         ]
       )
+    SuggestionUnrestrictedRRef c pred -> PP.align
+      (PP.vsep
+        [ "The following predicate could not be satisfied!"
+        , PP.indent 4 (pretty pred)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
+        , "This means that a rvalue reference is either duplicated or discarded!"
+        , ""
+        ]
+      )
     SuggestionUnrestrictedLinFunction c pred -> PP.align
       (PP.vsep
         [ "The following predicate could not be satisfied!"
@@ -99,6 +110,7 @@ instance Pretty Suggestion where
         , "at location:" <+> prettyLocation (loc c)
         , ""
         , "This means that a value of type '" <> pretty t <> "' is either duplicated or discarded!"
+        , "Note that this might be a false positive -- this might be allowed for your type!"
         , ""
         ]
       )
@@ -143,8 +155,8 @@ suggest is c inferredType clangType =
       in  catMaybes $ makeUnsatSpecific c <$> S.toPreds simplifiedPredicates
 
 makeUnsatSpecific :: C.Cursor -> Pred -> Maybe Suggestion
-makeUnsatSpecific c p@(PUn (t `TAp` _)) | t == typePtr =
-  pure $ SuggestionUnrestrictedPointer c p
+makeUnsatSpecific c p@(PUn (t `TAp` _)) | t == typePtr = pure $ SuggestionUnrestrictedPointer c p
+                                        | t == typeRRef = pure $ SuggestionUnrestrictedRRef c p 
 makeUnsatSpecific c p@(PUn t) | t == typeArrow = Nothing -- hotfix, sometimes a (Un ->) constraint appears from legacy code, this should not be presented to the user!
                               | t == typeLinArrow = pure $ SuggestionUnrestrictedLinFunction c p
                               | otherwise = pure $ SuggestionUnrestrictedSomething c p t
