@@ -14,6 +14,7 @@ import qualified Language.C.Clang              as C
 import           Data.Text                      ( Text )
 import           Data.Maybe                     ( isNothing
                                                 , fromJust
+                                                , catMaybes
                                                 )
 import           Control.Monad.Except
 import qualified Data.Text.Prettyprint.Doc     as PP
@@ -37,35 +38,70 @@ import           Debug.Trace                    ( traceShow )
 data Suggestion = SuggestionInternalError Text C.Cursor
                 | SuggestionUnificationError U.UnificationError Scheme Type C.Cursor
                 | SuggestionUnsatisfiedPredicate C.Cursor Pred
+                | SuggestionUnrestrictedPointer C.Cursor Pred
+                | SuggestionUnrestrictedLinFunction C.Cursor Pred
+                | SuggestionUnrestrictedSomething C.Cursor Pred Type
 
 instance Pretty Suggestion where
   pretty = \case
     SuggestionInternalError t c -> PP.align
-      (PP.sep
+      (PP.vsep
         [ "Encountered an internal error!"
-        , pretty t
-        , "at location: " <+> prettyLocation (loc c)
+        , PP.indent 4 (pretty t)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
         ]
       )
     SuggestionUnificationError u sch t c -> PP.align
-      (PP.sep
+      (PP.vsep
         [ "Encountered a unification error!"
-        , pretty u
+        , PP.indent 4 (pretty u)
         , "when attempting to unify (inferred):"
-        , pretty sch
+        , PP.indent 4 (pretty sch)
         , "with (from Clang):"
-        , pretty t
-        , "at location: " <+> prettyLocation (loc c)
+        , PP.indent 4 (pretty t)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
         ]
       )
-    SuggestionUnsatisfiedPredicate c preds -> PP.align
-      (PP.sep
-        [ "The following predicates could not be satisfied!"
-        , pretty preds
-        , "at location: " <+> prettyLocation (loc c)
+    SuggestionUnsatisfiedPredicate c pred -> PP.align
+      (PP.vsep
+        [ "The following predicate could not be satisfied!"
+        , PP.indent 4 (pretty pred)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
         ]
       )
-
+    SuggestionUnrestrictedPointer c pred -> PP.align
+      (PP.vsep
+        [ "The following predicate could not be satisfied!"
+        , PP.indent 4 (pretty pred)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
+        , "This means that a pointer is either duplicated or discarded!"
+        , ""
+        ]
+      )
+    SuggestionUnrestrictedLinFunction c pred -> PP.align
+      (PP.vsep
+        [ "The following predicate could not be satisfied!"
+        , PP.indent 4 (pretty pred)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
+        , "This means that a linear function is not used exactly once as it should be!"
+        , ""
+        ]
+      )
+    SuggestionUnrestrictedSomething c pred t -> PP.align
+      (PP.vsep
+        [ "The following predicate could not be satisfied!"
+        , PP.indent 4 (pretty pred)
+        , "at location:" <+> prettyLocation (loc c)
+        , ""
+        , "This means that a value of type '" <> pretty t <> "' is either duplicated or discarded!"
+        , ""
+        ]
+      )
 lintProgram :: InferState -> Program -> [Suggestion]
 lintProgram is toplevels = toplevels >>= lintTopLevel is
 
@@ -90,14 +126,13 @@ lintLet is (Let c LetFunction n _)
   | isNothing clangType
   = [SuggestionInternalError ("Expected a valid type given from Clang") c]
   | otherwise
-  = examine is c (fromJust inferredType) (fromJust clangType)
+  = suggest is c (fromJust inferredType) (fromJust clangType)
  where
   inferredType = is ^. typeEnv . at n
   clangType    = C.fromClangType =<< C.cursorType c
 
--- TODO lepsi nazev, dude
-examine :: InferState -> C.Cursor -> Scheme -> Type -> [Suggestion]
-examine is c inferredType clangType =
+suggest :: InferState -> C.Cursor -> Scheme -> Type -> [Suggestion]
+suggest is c inferredType clangType =
   case runExcept (inferredType `U.onewayUnifies` clangType) of
     Left err ->
       traceShow (C.typeCanonicalType <$> C.cursorType c)
@@ -105,4 +140,13 @@ examine is c inferredType clangType =
     Right (_, preds) ->
       let simplifiedPredicates =
               S.simplifyMany (is ^. classEnv) (S.fromPred JustBecause <$> preds)
-      in  fmap (SuggestionUnsatisfiedPredicate c) $ S.toPreds simplifiedPredicates
+      in  catMaybes $ makeUnsatSpecific c <$> S.toPreds simplifiedPredicates
+
+makeUnsatSpecific :: C.Cursor -> Pred -> Maybe Suggestion
+makeUnsatSpecific c p@(PUn (t `TAp` _)) | t == typePtr =
+  pure $ SuggestionUnrestrictedPointer c p
+makeUnsatSpecific c p@(PUn t) | t == typeArrow = Nothing -- hotfix, sometimes a (Un ->) constraint appears from legacy code, this should not be presented to the user!
+                              | t == typeLinArrow = pure $ SuggestionUnrestrictedLinFunction c p
+                              | otherwise = pure $ SuggestionUnrestrictedSomething c p t
+makeUnsatSpecific c p@(PFun t) | t == typeArrow = Nothing -- hotfix, sometimes a (Fun ->) constraint appears from legacy code, this should not be presented to the user!
+makeUnsatSpecific c p = pure $ SuggestionUnsatisfiedPredicate c p
