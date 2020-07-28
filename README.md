@@ -1,6 +1,8 @@
 # Lily
 
-_WIP_
+Lily is an experimental C++ linter
+based on linear types.
+It is a result of my bachelor thesis.
 
 ## Downloading the repository
 
@@ -58,24 +60,14 @@ to a version of nixpkgs for which lily builds and works.
 To update the version of nixpkgs, use the command `niv update`
 in the development nix-shell.
 
-### Cabal/Stack
-
-Seek the [Cabal CI workflow](https://github.com/jiribenes/lily/blob/master/.github/workflows/cabal.yml) in this repository for guidance.
-
-1) Ensure that your GHC version is 8.8.3
-2) Ensure that you have Clang installed with libraries
-3) Install my [clang-pure fork](https://github.com/jiribenes/clang-pure) located in the `deps/` folder using _Cabal/Stack_. For more instructions, view the file `DEV.md` in `deps/clang-pure`. Ideally it should be built by `cabal new-build` in the main folder but who knows?
-4) Install this project using _Cabal/Stack_.
-5) Pray that everything worked.
-
-## Docker
+#### Creating and using a Docker image with Nix
 
 Requires Nix, Docker.
 Warning: Creates a ~300MB image.
 
 1. Create and load the image using Nix
 ```
-docker load -i $(nix-build --attr docker release.nix)
+docker load -i $(nix-build --attr docker default.nix)
 ```
 
 2. Run the image in current directory
@@ -87,3 +79,29 @@ _Example usage:_
 ```
 docker run -itv $PWD:/data lily-docker lily lint examples/various.cpp
 ```
+
+### Cabal/Stack
+
+Seek the [Cabal CI workflow](https://github.com/jiribenes/lily/blob/master/.github/workflows/cabal.yml) in this repository for guidance.
+
+1) Ensure that your GHC version is 8.8.3
+2) Ensure that you have Clang installed with libraries
+3) Install my [clang-pure fork](https://github.com/jiribenes/clang-pure) located in the `deps/` folder using _Cabal/Stack_. For more instructions, view the file `DEV.md` in `deps/clang-pure`. Ideally it should be built by `cabal new-build` in the main folder but who knows?
+4) Install this project using _Cabal/Stack_.
+5) Pray that everything worked.
+
+## Using
+
+Assuming that `$LILY` is the way to invoke Lily
+as it might depend on which installation was chosen.
+
+Use the following command to lint an example file `examples/doublemove.cpp`:
+```
+$LILY lint examples/doublemove.cpp 
+```
+
+## Extending
+
+A common issue might be assigning a type to an expression from some C++ library.
+In order to add your own annotations, modify the `initialInferState` function in `src/Type/Infer.hs`.
+Note that `std::move` is there as a functioning example of a user-added annotation.
