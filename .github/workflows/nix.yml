@@ -15,7 +15,7 @@ jobs:
         matrix:
             ghc:
                 - "ghc883"
-                # TODO: - "ghc8101"  
+                - "ghc8101"  
 
     steps:
     - uses: actions/checkout@v2
