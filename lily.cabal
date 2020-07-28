@@ -17,7 +17,7 @@ source-repository head
   location:         https://github.com/jiribenes/lily.git
 
 common common-options
-  build-depends:       base >= 4.13 && < 4.14, clang-pure >= 0.2.1.0, lens, containers, unordered-containers, bytestring, mtl, transformers, text, prettyprinter, optparse-applicative, directory
+  build-depends:       base >= 4.13 && < 5, clang-pure >= 0.2.1.0, lens, containers, unordered-containers, bytestring, mtl, transformers, text, prettyprinter, optparse-applicative, directory
   
   ghc-options:         -Wall
                        -Wcompat
