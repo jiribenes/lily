@@ -9,7 +9,6 @@ module Options
   , optVerbose
   , optClangArguments
   , optCommand
-  , optOutput
   , parseOptions
   )
 where
@@ -26,7 +25,6 @@ data Options = Options {
     _optCommand :: !Command,
     _optSource :: !FilePath,
     _optVerbose :: !Bool,
-    _optOutput :: !(Maybe FilePath),
     _optClangArguments :: ![String]
 } deriving stock (Show, Eq, Ord)
 makeLenses ''Options
@@ -40,7 +38,6 @@ optionsParser = info
        <$> commandOption
        <*> sourceOption
        <*> verboseOption
-       <*> outputOption
        <*> clangArgumentsOption
        )
   <**> helper
@@ -72,12 +69,6 @@ optionsParser = info
   verboseOption :: Parser Bool
   verboseOption = switch
     (short 'v' <> long "verbose" <> help "Verbose (debug) output to stdin")
-
-  outputOption :: Parser (Maybe FilePath)
-  outputOption = optional $ strOption
-    (short 'o' <> long "output" <> metavar "OUTPUT_FILE" <> help
-      "Path to the resulting file. Writes to stdout if not provided."
-    )
 
   clangArgumentsOption :: Parser [String]
   clangArgumentsOption =

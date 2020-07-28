@@ -40,33 +40,18 @@ import           Type.Infer                     ( HasInferState
 import Lint ( lintProgram, Suggestion(..) )
 
 
-includes :: [String]
-includes =
-  ("-I" <>)
-    <$> [ "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/../../../../include/c++/9.3.0"
-        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/../../../../include/c++/9.3.0/x86_64-unknown-linux-gnu"
-        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/../../../../include/c++/9.3.0/backward"
-        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/include"
-        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/include"
-        , "/nix/store/52x4908vr922dhnxz1i5rfnrsq244vzc-gcc-9.3.0/lib/gcc/x86_64-unknown-linux-gnu/9.3.0/include-fixed"
-        , "/nix/store/2m6n8flsmhvn19b9l3c622y6rzi81y5w-glibc-2.30-dev/include"
-        ]
-
 lily :: Options -> IO ()
 lily opts = do
-  (structs, sccs) <- parseAST (opts & optClangArguments .~ includes) -- JB hack
+  (structs, sccs) <- parseAST opts
 
   toplevels       <- elaborate opts (structs, sccs)
   when (opts ^. optCommand == Elaborate) exitSuccess
-  putStrLn "----------------------"
 
   finalEnv <- infer opts toplevels
   when (opts ^. optCommand == Infer) exitSuccess
-  putStrLn "----------------------"
 
   suggestions <- lint finalEnv toplevels
   when (opts ^. optCommand == Lint) exitSuccess
-  putStrLn "----------------------"
 
   putStrLn "Internal error: Invalid command - You added a new command to Options.hs and forgot to use it in Lily.hs"
   exitFailure
