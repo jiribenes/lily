@@ -15,6 +15,9 @@ git clone --recursive-submodules $REPO_URL
 Please use the Nix package manager if possible,
 it makes everything way, way easier.
 
+Alternatively if you don't want to build the project yourself, 
+you can just use a prebuilt Docker image, see [here](https://github.com/jiribenes/lily/releases/tag/v0.1.0.0).
+
 ### Nix
 
 ```
