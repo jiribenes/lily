@@ -1,3 +1,7 @@
+{-| This module contains small, yet useful utility
+functions which work like the functions from 'Debug.Trace',
+but they are adapted to work on 'Pretty' values.
+-}
 module Debug.Trace.Pretty
   ( tracePretty
   , tracePrettyId

@@ -33,9 +33,6 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
-import           Debug.Trace                    ( traceM
-                                                , traceShowM
-                                                )
 import           Language.C.Clang.Cursor
 import qualified Language.C.Clang.Cursor.Typed as T
 
@@ -55,6 +52,7 @@ import           Type.Type                      ( Kind(..)
 import           Data.Text.Encoding             ( decodeUtf8 )
 import qualified Data.Text                     as T
 
+-- | Represents all possible errors that can happen in the elaboration phase.
 data ElaborationError = WeirdFunctionBody Location
                   | UnknownBinaryOperation Location
                   | UnknownUnaryOperation Location
@@ -131,10 +129,12 @@ instance Pretty ElaborationError where
       )
     ElaborationWeirdness l -> "Something weird at: " <+> prettyLocation l
 
+-- | An environment for elaboration contains all 'Struct's and sometimes the 'Constructor' we are working with.
 data ElaborationEnv = ElaborationEnv { _allStructs :: [Struct], _currentCtor :: Maybe ConstructorCursor }
   deriving stock (Eq, Show)
 makeLenses ''ElaborationEnv
 
+-- | Returns the current struct
 getCurrentStruct :: MonadElaboration m => m (Maybe Struct)
 getCurrentStruct = do
   ctor <- view currentCtor
@@ -148,9 +148,12 @@ getCurrentStruct = do
   isThisYourCtor :: ConstructorCursor -> Struct -> Bool
   isThisYourCtor ctor (Struct _ _ _ _ ctors _) = ctor `elem` ctors
 
+-- | A 'MonadElaboration' computation is a computation that can read the 'ElaborationEnv'
+-- and return a 'ElaborationError'
 type MonadElaboration m
   = (MonadError ElaborationError m, MonadReader ElaborationEnv m)
 
+-- | Elaborates an expression
 elaborateExpr :: MonadElaboration m => Cursor -> m Expr
 elaborateExpr cursor = case cursorKind cursor of
   BinaryOperator -> do
@@ -206,7 +209,9 @@ elaborateExpr cursor = case cursorKind cursor of
                 case cursorChildren cursor of
     [] -> do
       typ <- extractType cursor
-      pure $ App cursor (Builtin cursor (BuiltinNew typ)) (Builtin cursor BuiltinUnit)
+      pure $ App cursor
+                 (Builtin cursor (BuiltinNew typ))
+                 (Builtin cursor BuiltinUnit)
     xs -> do
       typ       <- extractType cursor
       child     <- note (WeirdNewOperator $ loc cursor) $ xs ^? _last
@@ -214,9 +219,9 @@ elaborateExpr cursor = case cursorKind cursor of
       childExpr <- elaborateExpr child
 
       pure $ App cursor (Builtin cursor (BuiltinNewArray typ)) childExpr
-  
+
   CXXDeleteExpr -> case cursorChildren cursor of
-    [child]  -> do
+    [child] -> do
       expr <- elaborateExpr child
       pure $ App cursor (Builtin cursor BuiltinDelete) expr
     _ -> throwError $ WeirdDeleteOperator $ loc cursor
@@ -253,8 +258,7 @@ elaborateExpr cursor = case cursorKind cursor of
           referenced <- note (ExpectedReferencedExpr $ loc fn)
             $ cursorReferenced cursor
           elaborateExpr referenced
-        other -> do
-          traceShowM $ "Found: " <> show other
+        _ -> do
           throwError (ElaborationWeirdness $ loc fn)
           -- hope that this is a constructor.
       exprs <- traverse elaborateExpr args
@@ -302,12 +306,13 @@ elaborateExpr cursor = case cursorKind cursor of
   FirstExpr             -> elaborateSingleChild cursor
   other                 -> error $ "found: " <> show other
 
+-- | Elaborates a literal
 elaborateLiteral :: MonadElaboration m => Cursor -> m Expr
 elaborateLiteral cursor = do
   typ <- extractType cursor
   pure $ Literal cursor typ
 
--- | Elaborations a block
+-- | Elaborates a C++ block, appends the first argument at the end of the block (typically used by implicit return)
 elaborateBlock
   :: MonadElaboration m
   => (Cursor -> Expr)
@@ -317,7 +322,8 @@ elaborateBlock defaultResult cursor = do
   result <- elaborateBlockCont defaultResult cursor
   pure $ result $ defaultResult (T.withoutKind cursor)
 
--- | Elaborations a block with a 'Expr'-shaped hole at the end of it
+-- | Elaborates a C++ block with a 'Expr'-shaped hole at the end of it,
+-- i.e. uses continuation-passing style
 elaborateBlockCont
   :: MonadElaboration m
   => (Cursor -> Expr)
@@ -335,6 +341,7 @@ elaborateBlockCont defaultResult cursor = do
   longFunc :: MonadElaboration m => m (Expr -> Expr)
   longFunc = foldlM go id $ T.cursorChildren cursor
 
+-- | Elaborates a statement
 elaborateStmt :: MonadElaboration m => (Cursor -> Expr) -> Cursor -> m Expr
 elaborateStmt defaultResult cursor = case cursorKind cursor of
   CompoundStmt ->
@@ -346,6 +353,7 @@ elaborateStmt defaultResult cursor = case cursorKind cursor of
     stmtCont <- elaborateBlockOne defaultResult cursor
     pure $ stmtCont (defaultResult cursor)
 
+-- | Elaborates members of a block in continuation-passing style
 elaborateBlockOne
   :: MonadElaboration m => (Cursor -> Expr) -> Cursor -> m (Expr -> Expr)
 elaborateBlockOne defaultResult cursor = case cursorKind cursor of
@@ -442,11 +450,14 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
 
     pure $ \rest -> LetIn cursor (Name "_") expr rest
 
+-- | A helper function which automatically elaborates an expression
+-- with a single child.
 elaborateSingleChild :: MonadElaboration m => Cursor -> m Expr
 elaborateSingleChild cursor = do
   let [child] = cursorChildren cursor
   elaborateExpr child
 
+-- | Elaborates a top level function as represented by 'SomeFunctionCursor'
 elaborateTopLevelFunction
   :: MonadElaboration m => SomeFunctionCursor -> m TopLevel
 elaborateTopLevelFunction = \case
@@ -475,10 +486,11 @@ elaborateTopLevelFunction = \case
         pure $ TLLet $ Let untypedCursor LetFunction name function
       _ -> throwError (WeirdFunctionBody $ loc cursor)
 
--- | Elaboration an expression with the constructor set to the specified value
+-- | Elaborates an expression with the constructor set to the specified value
 withConstructor :: MonadElaboration m => ConstructorCursor -> (m a -> m a)
 withConstructor c = locally currentCtor (const $ Just c)
 
+-- | Elaborates a constructor
 elaborateConstructor :: MonadElaboration m => ConstructorCursor -> m TopLevel
 elaborateConstructor cursor = withConstructor cursor $ do
   -- these are typically the first children but I really want to be safe here 
@@ -492,9 +504,6 @@ elaborateConstructor cursor = withConstructor cursor $ do
   let untypedCursor = T.withoutKind cursor
   let parameters    = untypedCursor ^.. parameterF
   let name          = nameFromBS $ cursorSpelling untypedCursor
-
-  env <- view currentCtor
-  traceShowM env
 
   maybeStruct          <- getCurrentStruct
   (Struct _ t _ _ _ _) <- note (ExpectedValidStruct $ loc cursor) maybeStruct
@@ -511,6 +520,7 @@ elaborateConstructor cursor = withConstructor cursor $ do
       pure $ TLLet $ Let untypedCursor LetConstructor name function
     _ -> throwError (WeirdFunctionBody $ loc cursor)
 
+-- | Elaborates function parameters in continuation-passing style
 elaborateParameters
   :: MonadReader ElaborationEnv m
   => MonadElaboration m => [T.CursorK 'ParmDecl] -> m (Expr -> Expr)
@@ -527,6 +537,7 @@ elaborateParameters = foldlM go id
 
     pure $ cont . lam
 
+-- | Elaborates the whole strongly connected component of 'SomeFunctionCursor's
 elaborateSCCTopLevel
   :: MonadReader ElaborationEnv m
   => MonadElaboration m => G.SCC SomeFunctionCursor -> m TopLevel
@@ -538,6 +549,7 @@ elaborateSCCTopLevel (G.CyclicSCC  cursors) = do
     [] -> throwError (ElaborationWeirdness $ loc (cursors ^?! _head))
     xs -> xs & NE.fromList & TLLetRecursive & pure
 
+-- | This is the main function that takes pre-processed C++ AST and returns an elaborated 'Program'
 elaborateTopLevel
   :: [StructCursor]
   -> [G.SCC SomeFunctionCursor]
@@ -549,6 +561,7 @@ elaborateTopLevel structs fnSccs = do
   tlFns <- traverse (flip runReaderT elaborateEnv . elaborateSCCTopLevel) fnSccs
   pure $ (TLStruct <$> elaborateedStructs) <> tlFns
 
+-- | Elaborates a single struct
 elaborateStruct :: MonadError ElaborationError m => StructCursor -> m Struct
 elaborateStruct cursor = do
   let fields =
@@ -572,6 +585,7 @@ elaborateStruct cursor = do
                       methodNames
   pure struct
 
+-- | Elaborates a field of a struct
 elaborateField
   :: MonadError ElaborationError m => T.CursorK 'FieldDecl -> m StructField
 elaborateField cursor = do
@@ -581,6 +595,7 @@ elaborateField cursor = do
 
   pure $ StructField untypedCursor typ name
 
+-- | Returns the type of a Clang 'Cursor'
 extractType :: MonadError ElaborationError m => Cursor -> m Type
 extractType c =
   note (ExpectedValidType $ loc c) $ fromClangType =<< cursorType c
