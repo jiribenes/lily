@@ -12,7 +12,6 @@ module Type.Class
   , member
   , updateInstances
   , hasFieldForStruct
-  -- , addStruct
   )
 where
 
@@ -33,6 +32,7 @@ import           Name
 import           Type.Unify
 
 -- Assumes that union of '_fdFrom' and '_fdTo' is all of the 'TVar's possible in 'ClassInfo'
+-- | Models a functional dependency.
 data FunDep = FunDep { _fdFrom :: [TVar], _fdTo :: [TVar] }
 makeLenses ''FunDep
 
@@ -40,25 +40,23 @@ instance Pretty FunDep where
   pretty fd = PP.hsep (fd ^. fdFrom <&> pretty) <+> "~>" <+> PP.hsep
     (fd ^. fdTo <&> pretty)
 
+-- | Represents a type class with a possible 'FunDep'
 data ClassInfo = ClassInfo { _cTyVars :: [TVar], _cResult :: Pred, _cFunDeps :: Maybe FunDep }
 makeLenses ''ClassInfo
 
--- the instances are not required to be well-kinded
--- specifically, we lift Un even to function levels which wouldn't make sense
--- however, the manual instances are verified to be fine TODO explain this better
+-- | Represents an instance of a type class
+-- The instances are not required to be well-kinded!
+-- Specifically, we lift Un even to function levels which wouldn't make sense otherwise
+-- (kind polymorphism? :O)
+-- However, the manual instances are verified to be sane.
 --
--- we would need kind variables to do this properly :/
--- i.e.
+-- We would need kind variables to do this properly:
 -- ```
 -- type Un = forall k. k -> Constraint
 -- class Un (x :: k) where ...
 -- ```
-data ClassInstance = ClassInstance { _iTyVars :: [TVar], {- _iPre :: [Pred],-} _iResult :: Pred }
+data ClassInstance = ClassInstance { _iTyVars :: [TVar], _iResult :: Pred }
 makeLenses ''ClassInstance
-
-
-prettyPredName :: Pred -> PP.Doc ann
-prettyPredName (IsIn n _) = pretty n
 
 instance Pretty ClassInfo where
   pretty ci =
@@ -70,6 +68,7 @@ instance Pretty ClassInfo where
     fdPretty = \case
       Nothing -> ""
       Just f  -> "|" <+> pretty f
+    prettyPredName (IsIn n _) = pretty n
 
 instance Pretty ClassInstance where
   pretty ci =
@@ -82,6 +81,7 @@ instance Pretty ClassInstance where
 type ClassInfoEnv = M.Map Name ClassInfo
 type ClassInstanceEnv = M.Map Name [ClassInstance]
 
+-- | This is the default class environment with information about all possible type classes.
 defaultClasses :: ClassInfoEnv
 defaultClasses = M.fromList
   [ ("Un"      , unClass)
@@ -110,6 +110,7 @@ defaultClasses = M.fromList
   hasFieldClass = ClassInfo [x, r, a] (PHasField varX varR varA) (Just fDep)
   fDep          = FunDep [x, r] [a]
 
+-- | This is the default instance environment with information about all possible instances of type classes.
 defaultInstances :: ClassInstanceEnv
 defaultInstances = M.fromList
   [ ("Un"      , unInstances)
@@ -126,9 +127,11 @@ defaultInstances = M.fromList
   geqInstances      = []
   hasFieldInstances = []
 
+-- | A smart constructor for an instance of a fully instantiated type (with no type variables)
 simpleInstance :: Pred -> ClassInstance
-simpleInstance result = ClassInstance [] {- [] -}result
+simpleInstance result = ClassInstance [] result
 
+-- | A class environment consists of an environment of type classes and an environment of their instances. 
 data ClassEnv = ClassEnv { _classes :: !ClassInfoEnv, _instances :: !ClassInstanceEnv }
 makeLenses ''ClassEnv
 
@@ -146,27 +149,16 @@ instance Semigroup ClassEnv where
 instance Monoid ClassEnv where
   mempty = ClassEnv mempty mempty
 
+-- | The default 'ClassEnv'
 initialClassEnv :: ClassEnv
 initialClassEnv = ClassEnv defaultClasses defaultInstances
 
-{-
-structUnRule :: Struct -> ClassInstance -- no. check if fields which have a non-type-variable type are Un, then add the instance. sheesh.
-structUnRule (Struct _ tcon _ fields _) = ClassInstance
-  []
-  (PUn . getType <$> fields)
-  (PUn tcon)
- where
-  -- TODO: Create lenses (folds) for types!
-  getType :: StructField -> Type
-  getType (StructField _ t _) = t
-  -}
-
+-- | Attempts to satisfy a predicate by a substitution,
+-- if successful, returns the substitution.
 substPred :: ClassEnv -> Pred -> Maybe Subst
 substPred ce p@(IsIn n ts)
-  |
- -- -- --  | tracePretty (ce, p) False = undefined
-    length ts /= length (cls ^. cTyVars)
-  = error
+  | length ts /= length (cls ^. cTyVars)
+  = error -- This should never happen, that's why it's an (unsafe) runtime error!
     $  "caught invalid predicate!\n"
     <> show (pretty p)
     <> "\nof class:\n"
@@ -177,6 +169,7 @@ substPred ce p@(IsIn n ts)
   cls   = ce ^?! classes . ix n
   insts = ce ^?! instances . ix n
 
+  -- | Checks if a predicate fits a single instance
   fitsInstance :: Pred -> ClassInstance -> Maybe Subst
   fitsInstance pr ci
     | pr == ci ^. iResult = Just emptySubst
@@ -197,12 +190,15 @@ isTVar :: Type -> Bool
 isTVar TVar{} = True
 isTVar _      = False
 
+-- | Checks if a predicate is satisfiable
 isIn :: ClassEnv -> Pred -> Bool
 isIn ce = isJust . substPred ce
 
+-- | Checks if a predicate is satisfiable
 member :: Pred -> ClassEnv -> Bool
 member = flip isIn
 
+-- | Attempts to unify two predicates, returns a 'Subst'itution on success.
 unifyPreds :: Pred -> Pred -> Either UnificationError Subst
 unifyPreds (IsIn a ts) (IsIn b us)
   | a /= b = error
@@ -211,10 +207,12 @@ unifyPreds (IsIn a ts) (IsIn b us)
     "not the same length, this should've been caught a long time ago!"
   | otherwise = unifyMany (NE.toList ts) (NE.toList us)
 
+-- | Adds new instances to the instance environment
 updateInstances
   :: (Name, [ClassInstance]) -> ClassInstanceEnv -> ClassInstanceEnv
-updateInstances (n, new) instances = instances & at n %~ fmap (new <>)
+updateInstances (n, new) insts = insts & at n %~ fmap (new <>)
 
+-- | Generates instances of the @HasField@ type class for a struct
 hasFieldForStruct :: Struct -> (Name, [ClassInstance])
 hasFieldForStruct (Struct _ structType _ fields _ _) =
   ("HasField", fields >>= makeFieldInstances)

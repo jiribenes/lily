@@ -23,6 +23,7 @@ import           Type.Fresh
 import           Name
 import           Control.Monad.Fresh
 
+-- | ADT representing all possible errors that can happen during unification.
 data UnificationError = InfiniteType TVar Type
                       | UnificationFail Type Type
                       | KindMismatch Type Type
@@ -32,7 +33,7 @@ data UnificationError = InfiniteType TVar Type
 
 instance Pretty UnificationError where
   pretty (UnificationFail a b) = PP.align
-    (PP.vsep -- TODO: kind is mostly for debug purposes (?)
+    (PP.vsep
       [ "Cannot unify:"
       , PP.indent 4
         $ PP.hsep [pretty a, PP.parens $ "of kind:" <+> pretty (typeKind a)]
@@ -54,6 +55,7 @@ instance Pretty UnificationError where
     "Cannot satisfy the following predicates: "
       <+> PP.indent 4 (PP.vsep $ pretty <$> preds)
 
+-- | Attempts to unify two types, returns a 'Subst'itution if successful.
 unifies :: MonadError UnificationError m => Type -> Type -> m Subst
 unifies t1 t2 | t1 == t2                   = pure emptySubst
               | typeKind t1 /= typeKind t2 = throwError $ KindMismatch t1 t2
@@ -61,33 +63,15 @@ unifies (TCon c1) (TCon c2) | c1 == c2 = pure emptySubst
 unifies (TVar tv)   t                  = tv `bind` t
 unifies t           (TVar tv  )        = tv `bind` t
 unifies (TAp t1 t2) (TAp t3 t4)        = unifyMany [t1, t2] [t3, t4]
--- these rules are special for mutable references
--- we should fix it up to say something like
---
---   MR t1        t2
---   ---------------
---     t2 := MR t1
--- 
--- so that it propagates
--- unifies a@(MutRef t1) t2 | tracePretty (a, t2) True =
---   t1 `unifies` t2
--- unifies t1 b@(MutRef t2) | tracePretty (t1, b) True =
---   t1 `unifies` t2
-
--- TODO: solve multiple layers of mutable references
--- how do we solve that properly? (mutable reborrows)
-
 -- catch-all clause
 unifies t1          t2                 = throwError $ UnificationFail t1 t2
 
-wrapIn :: MonadError UnificationError m => (Type -> Type) -> m Subst -> m Subst
-wrapIn f s = do
-  Subst m <- s
-  pure $ Subst $ M.map f m
-
+-- | A simple occurs check --- checks if a type variable
+-- is present in something which supports the 'ftv' operation.  
 occursCheck :: FreeTypeVars a => TVar -> a -> Bool
 occursCheck tv t = tv `S.member` ftv t
 
+-- | Attempts to unify a type variable and a type, returns a 'Subst'itution if successful.
 bind :: MonadError UnificationError m => TVar -> Type -> m Subst
 bind tv@(TV _ k) t | t == TVar tv     = pure emptySubst
                    | typeKind t /= k  = throwError $ KindMismatch (TVar tv) t
@@ -104,10 +88,9 @@ unifyMany (t : ts) (u : us) = do
   pure (sub2 `compose` sub1)
 unifyMany _ _ = error "unifyMany: the length of lists differs!"
 
--- | Local-only function for a cheap and dirty instantiation
-dirtyInstantiate :: Monad m => Scheme -> m (Type, [Pred])
-dirtyInstantiate = flip evalFreshT initialFreshState . instantiate
 
+-- | One-way unification of a polytype and a monotype.
+-- Used for checking if the polytype is more general than the actual type.
 onewayUnifies
   :: MonadError UnificationError m => Scheme -> Type -> m (Subst, [Pred])
 onewayUnifies sch t2 = do
@@ -134,3 +117,7 @@ onewayUnifies sch t2 = do
     sub2 <- locallyUnifyMany (sub1 `apply` ts) (sub1 `apply` us)
     pure (sub2 `compose` sub1)
   locallyUnifyMany _ _ = error "locallyUnifyMany: the length of lists differs!"
+
+  -- | Local-only function for a cheap and dirty instantiation
+  dirtyInstantiate :: Monad m => Scheme -> m (Type, [Pred])
+  dirtyInstantiate = flip evalFreshT initialFreshState . instantiate
