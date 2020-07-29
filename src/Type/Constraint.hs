@@ -161,7 +161,7 @@ instance ActiveTypeVars Constraint where
   atv (CImpInst _ t1 monos t2) =
     ftv t1 `S.union` (ftv monos `S.intersection` ftv t2)
   atv (CExpInst _ t s   ) = ftv t `S.union` ftv s
-  atv (CHasField _ x r a) = ftv x `S.union` ftv r -- TODO: this is a temporary hack, this should probably be in the Type.Class module handled properly
+  atv (CHasField _ x r a) = ftv x `S.union` ftv r
   atv (CIn _ _ ts       ) = foldr1 S.union (ftv <$> ts)  -- this should be correct as we don't really work with these
 
 instance Substitutable Constraint where
