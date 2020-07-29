@@ -48,12 +48,14 @@ newtype FreshState n = FreshState { unFresh :: NE.NonEmpty n }
 -- makes a lens `_fresh` for getting the contents of `FreshState`
 makeLensesFor [("unFresh", "_fresh")] ''FreshState
 
+-- | An initial 'FreshState' of 'Name's.
+-- Produces an infinite stream of 'Name's of the form @t$N@ where @$N@ is from 0 onwards.
 initialFreshState :: FreshState Name
 initialFreshState = FreshState
   { unFresh = Name . ("t" <>) . T.pack . show @Int <$> NE.iterate (+ 1) 0
   }
 
--- | Monad transformer for `FreshState`
+-- | Monad transformer for 'MonadFresh'
 newtype FreshT n (m :: Type -> Type) a = FreshT { unFreshT :: StrictS.StateT (FreshState n) m a }
     deriving newtype (Functor, Applicative, Monad, MonadTrans, MonadPlus, Alternative, MonadReader r, MonadState (FreshState n), MonadWriter w, MonadIO)
 

@@ -37,9 +37,14 @@ import           Type.Infer                     ( HasInferState
                                                 , typeEnv
                                                 , InferState
                                                 )
-import Lint ( lintProgram, Suggestion(..) )
+import           Lint                           ( lintProgram
+                                                , Suggestion(..)
+                                                )
 
-
+{-| This function is the entry point to Lily the library
+   as it is a monadic operation that takes 'Options'
+   and acts according to them.
+-}
 lily :: Options -> IO ()
 lily opts = do
   (structs, sccs) <- parseAST opts
@@ -53,9 +58,12 @@ lily opts = do
   suggestions <- lint finalEnv toplevels
   when (opts ^. optCommand == Lint) exitSuccess
 
-  putStrLn "Internal error: Invalid command - You added a new command to Options.hs and forgot to use it in Lily.hs"
+  putStrLn
+    "Internal error: Invalid command - You added a new command to Options.hs and forgot to use it in Lily.hs"
   exitFailure
 
+{-| Parse AST according to the source file in 'Options',
+    return list of structs and a list of strongly connected components of functions -}
 parseAST :: Options -> IO ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
 parseAST opts = do
   let sourceFile = opts ^. optSource
@@ -73,10 +81,10 @@ parseAST opts = do
 
   pure (structs, scc)
 
+{-| Main function for the elaboration command --- takes 'Options'
+and a representation of C++ AST from 'parseAST' and returns an elaborated program. -}
 elaborate
-  :: Options
-  -> ([C.StructCursor], [G.SCC C.SomeFunctionCursor])
-  -> IO Program
+  :: Options -> ([C.StructCursor], [G.SCC C.SomeFunctionCursor]) -> IO Program
 elaborate opts (structs, fnSccs) = case elaborateTopLevel structs fnSccs of
   Left err -> do
     printError Elaborate err
@@ -87,6 +95,8 @@ elaborate opts (structs, fnSccs) = case elaborateTopLevel structs fnSccs of
       putStrLn ""
     pure xs
 
+{-| Main function for the infer command --- takes 'Options'
+    and an elaborated 'Program' and produces an 'InferState' -}
 infer :: Options -> Program -> IO InferState
 infer opts toplevels = case inferProgram toplevels of
   Left err -> do
@@ -98,6 +108,8 @@ infer opts toplevels = case inferProgram toplevels of
       putStrLn ""
     pure xs
 
+{-| Main function for the lint command --- takes an 'InferState'
+from 'infer' and an elaborated 'Program' and returns a list of suggestions -}
 lint :: InferState -> Program -> IO [Suggestion]
 lint is toplevels = do
   let suggestions = lintProgram is toplevels
@@ -105,8 +117,7 @@ lint is toplevels = do
   putStrLn ""
   pure $ suggestions
 
--- -------------------------
-
+-- | Pretty-prints an error
 printError :: Pretty a => Command -> a -> IO ()
 printError cmd err = do
   putStrLn "======================"
@@ -116,6 +127,7 @@ printError cmd err = do
   putStrLn ""
   putStrLn "======================"
 
+-- | Pretty-prints an 'InferState'
 prettyInferState :: HasInferState s => s -> [PP.Doc ann]
 prettyInferState finalEnv =
   finalEnv ^. typeEnv . to M.toList & each %~ prettify
