@@ -123,7 +123,7 @@ simplifyGeq _ c = [c]
 -- which results in totality of this function.
 simplifyMany :: C.ClassEnv -> [Constraint] -> [Constraint]
 simplifyMany e cs | cs == cs' = cs
-                  | otherwise = simplifyMany e cs' --TODO: simplification is disabled for the time-being
+                  | otherwise = simplifyMany e cs'
   where cs' = chooseOne cs >>= uncurry (simplify e)
 
 -- | Solves a single constraint from a multiset of constraints,

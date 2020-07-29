@@ -6,9 +6,6 @@ where
 
 import qualified Data.ByteString.Char8         as BS
 import           Data.Functor                   ( (<&>) )
-import           Debug.Trace                    ( traceShowId
-                                                , traceShow
-                                                )
 import           GHC.Stack                      ( HasCallStack )
 import           Language.C.Clang.Type          ( typeElementType
                                                 , typeArgTypes
@@ -25,37 +22,36 @@ import           Data.Maybe                     ( fromJust )
 
 type ClangType = ClangType.Type
 
+-- | Takes a 'ClangType' and returns a possible 'Type' as known by Lily
+--
 -- Note: This function is technically partial because Clang
 -- can have 'ClangType.Type.Invalid' type kind
 -- which indicates an unrecoverable error in Clang itself.
 -- We'll just error in that case since what else is to do there?
 fromClangType :: HasCallStack => ClangType -> Maybe Type
 fromClangType clangType =
-  case traceShowId $ ClangType.typeKind canonicalClangType of
+  case ClangType.typeKind canonicalClangType of
     ClangType.Invalid   -> error "internal error: invalid Clang type!"
-    ClangType.Unexposed -> traceShow
-      (  "Found type: "
+    ClangType.Unexposed -> error
+      (  "internal error: Found type: "
       <> BS.unpack (typeSpelling clangType)
       <> ", canonically:"
       <> BS.unpack (typeSpelling canonicalClangType)
-      <> ", but returning Nothing for now! TODO"
       )
-      Nothing -- TODO: this generally means that the type is a bit involved and you should just use a new type constructor with the given spelling!
     ClangType.Void    -> pure typeUnit
     ClangType.Bool    -> pure typeBool
     ClangType.Int     -> pure typeInt
     ClangType.UInt    -> pure typeUInt
     ClangType.Char_S  -> pure typeChar
     ClangType.Pointer -> do
-      let canonicalPointee =
-            typeCanonicalType $ fromJust $ typePointeeType canonicalClangType
+      let canonicalPointee = typeCanonicalType $ fromJust $ typePointeeType canonicalClangType
       case ClangType.typeKind canonicalPointee of
         -- special case for function pointers
         ClangType.FunctionProto -> fromClangType canonicalPointee
         _                       -> fromClangType canonicalPointee <&> typePtrOf
     ClangType.Record -> do
       let name = nameFromBS $ typeSpelling canonicalClangType
-      let tc   = TC name StarKind -- TODO: get kind from clang
+      let tc   = TC name StarKind -- we presume that all types from Clang are of kind StarKind, thus ignoring templates
       pure (TCon tc)
     ClangType.LValueReference -> -- ignore LRef for type inference, see 'getArgumentType' for proper handling during linting
       typePointeeType canonicalClangType >>= fromClangType
@@ -70,7 +66,7 @@ fromClangType clangType =
       pure $ foldr UnArrow resultType argTypes
     ClangType.ConstantArray ->
       typeElementType canonicalClangType >>= fromClangType <&> typeListOf
-    other -> traceShow
+    other -> error
       (unlines
         [ "internal error: Encountered unknown Clang type (no conversion available!)"
         , "\t\tName:\t\t\t" <> BS.unpack (typeSpelling clangType)
@@ -79,9 +75,10 @@ fromClangType clangType =
         , "\t\tKind:\t\t\t'" <> show other <> "'"
         ]
       )
-      Nothing
   where canonicalClangType = typeCanonicalType clangType
 
+-- | Gets a Lily 'Type' from Clang's 'ClangType'.
+-- Does NOT ignore LRef and RRef.
 getArgumentType :: HasCallStack => ClangType -> Maybe Type
 getArgumentType clangType = case ClangType.typeKind canonicalClangType of
   ClangType.LValueReference -> do

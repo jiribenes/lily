@@ -21,19 +21,21 @@ import           Data.Text.Prettyprint.Doc      ( (<+>)
 
 import           Name
 
+-- | Represents a type variable with its 'Name' and its 'Kind'
 data TVar = TV !Name Kind deriving stock (Show, Eq, Ord)
 
 instance Pretty TVar where
   pretty (TV n StarKind) = pretty n
   pretty (TV n k       ) = PP.parens $ pretty n <+> "::" <+> pretty k
 
+-- | Represents a type constructor with its 'Name' and its 'Kind'
 data TCon = TC !Name Kind deriving stock (Show, Eq, Ord)
 
 instance Pretty TCon where
   pretty (TC n StarKind) = pretty n
   pretty (TC n k       ) = PP.parens $ pretty n <+> "::" <+> pretty k
 
--- | Types are either type variables, type constructors or a type applied to another
+-- | Types are either type variables, type constructors, a type applied to another or type-level symbols
 data Type = TVar TVar
           | TCon TCon
           | TAp Type Type
@@ -43,6 +45,7 @@ data Type = TVar TVar
 instance Pretty Type where
   pretty = prettyType mempty
 
+-- | Helper function to pretty print a type with predicates
 prettyType :: S.Set Pred -> Type -> PP.Doc ann
 prettyType ps = \case
   TVar (TV n _) -> pretty n
@@ -63,7 +66,7 @@ prettyType ps = \case
   maybeParenArrow p f doc = if isArrow p f then PP.parens doc else doc
 
 -- | Kind is the type of type
--- needed for type constructors
+-- Every kind is either Star, Symbol or an Arrow between two kinds.
 data Kind = StarKind
           | SymbolKind
           | ArrowKind Kind Kind
@@ -75,6 +78,8 @@ instance PP.Pretty Kind where
   pretty (ArrowKind a@ArrowKind{} b) =
     PP.parens (pretty a) <+> "->" <+> pretty b
   pretty (ArrowKind a b) = pretty a <+> "->" <+> pretty b
+
+-- BASIC TYPES FOLLOW
 
 typeUnit :: Type
 typeUnit = TCon $ TC "Unit" StarKind
@@ -112,6 +117,7 @@ typeLinArrow :: Type
 typeLinArrow = TCon conLinArrow
 typeUnArrow :: Type
 typeUnArrow = TCon conUnArrow
+
 conLRef :: TCon
 conLRef = TC "LRef" $ ArrowKind StarKind StarKind
 typeLRef :: Type
@@ -120,6 +126,7 @@ typeLRef = TCon conLRef
 pattern LRef :: Type -> Type
 pattern LRef x <- _ `TAp` x 
   where LRef x = typeLRef `TAp` x
+
 conRRef :: TCon
 conRRef = TC "RRef" $ ArrowKind StarKind StarKind
 typeRRef :: Type
@@ -129,7 +136,7 @@ pattern RRef :: Type -> Type
 pattern RRef x <- _ `TAp` x 
   where RRef x = typeRRef `TAp` x
 
--- | (typeclass) Predicate 
+-- | Predicate with a name of a type class and a list of types
 data Pred = IsIn !Name (NonEmpty Type) deriving stock (Eq, Show, Ord)
 
 instance Pretty Pred where
@@ -137,11 +144,12 @@ instance Pretty Pred where
   pretty (IsIn n ts) =
     pretty n <+> PP.sep (NE.toList $ prettyTypeParenIfAp <$> ts)
 
+-- | Helper function to parenthesize type application properly
 prettyTypeParenIfAp :: Type -> PP.Doc ann
 prettyTypeParenIfAp t@TAp{} = PP.parens (pretty t)
 prettyTypeParenIfAp t       = pretty t
 
--- constructors for the four most used predicates
+-- constructors for the most used predicates
 pattern PFun :: Type -> Pred
 pattern PFun x <- IsIn "Fun" [x] where PFun x = IsIn "Fun" [x]
 pattern PUn :: Type -> Pred
@@ -225,22 +233,14 @@ instance Pretty Subst where
 emptySubst :: Subst
 emptySubst = mempty
 
+-- | Composition of two substitutions is a substitution
 compose :: Subst -> Subst -> Subst
 (Subst s1) `compose` (Subst s2) =
   Subst $ M.map (apply (Subst s1)) s2 `M.union` s1
 
+-- | Every 'a' in which we can apply a substitution is 'Substitutable'
 class Substitutable a where
   apply :: Subst -> a -> a
-
-{-
-instance Substitutable TVar where
-  apply sub@(Subst s) a = tv
-   where
-    t         = TVar a
-    tv        = case M.findWithDefault t a s of -- this is fine by construction!
-                  (TVar tv') -> tv'
-                  other  -> error $ "Wrong substitution for a TVar!\n" <> "Originally: " <> show (pretty t) <> ", aka: " <> show (pretty a) <> ", subst: " <> show (pretty sub) <> ".\n" <> "Got: " <> show (pretty other) 
--}
 
 instance Substitutable Type where
   apply _         con@TCon{}       = con
@@ -271,6 +271,7 @@ instance Substitutable a => Substitutable (Qual a) where
 instance Substitutable a => Substitutable (M.Map k a) where
   apply s = M.map (apply s)
 
+-- | Every 'a' in which can produce a list of free type variables is 'FreeTypeVars'
 class FreeTypeVars a where
   ftv   :: a -> S.Set TVar
 
@@ -299,6 +300,7 @@ instance FreeTypeVars a => FreeTypeVars [a] where
 instance FreeTypeVars a => FreeTypeVars (S.Set a) where
   ftv = foldr (S.union . ftv) S.empty
 
+-- | Every 'a' in which can produce a list of active type variables is 'FreeTypeVars'
 class ActiveTypeVars a where
   atv :: a -> S.Set TVar
 
@@ -309,7 +311,7 @@ instance ActiveTypeVars a => ActiveTypeVars [a] where
 instance ActiveTypeVars a => ActiveTypeVars (S.Set a) where
   atv = foldr (S.union . atv) S.empty
 
--- | Get a kind from a type
+-- | Gets a kind from a type
 typeKind :: Type -> Kind
 typeKind (TCon (TC _ k)) = k
 typeKind (TVar (TV _ k)) = k

@@ -18,6 +18,7 @@ import           Language.C.Clang.Cursor        ( cursorUSR
 
 import           Clang.Function
 
+-- | A helper function to print AST to the standard output
 printAST :: TranslationUnit -> IO ()
 printAST tu = go 0 $ translationUnitCursor tu
  where

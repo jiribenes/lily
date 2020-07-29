@@ -14,6 +14,7 @@ import           Language.C.Clang.Token
 
 import           Name
 
+-- | Gets the proper field name of a 'MemberRefExpr'
 memberRHSSpelling :: T.CursorK 'MemberRefExpr -> Maybe Name
 memberRHSSpelling c = if nameIsNull name
   then parseMemberSpelling c
@@ -25,6 +26,7 @@ memberRHSSpelling c = if nameIsNull name
 allTokens :: T.HasExtent k => T.CursorK k -> [Token]
 allTokens = tokenSetTokens . tokenize . T.cursorExtent
 
+-- | A dirty hack to actually parse the name. For shame, Clang, this should not be my problem.
 parseMemberSpelling :: T.CursorK 'MemberRefExpr -> Maybe Name
 parseMemberSpelling c = case relevantTokens (allTokens c) of
   [x] -> Just $ nameFromBS x
