@@ -1,3 +1,5 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE StandaloneDeriving #-}
@@ -18,7 +20,8 @@ import qualified Data.Text.Prettyprint.Doc     as PP
 import           Data.Text.Prettyprint.Doc      ( (<+>)
                                                 , Pretty(..)
                                                 )
-import           Language.C.Clang.Cursor        ( Cursor
+import           Language.C.Clang.Cursor        (cursorChildrenF,  CursorKind(..)
+                                                , Cursor
                                                 , cursorKind
                                                 , cursorSpelling
                                                 )
@@ -28,6 +31,7 @@ import           Clang.OpParser
 import           Name
 import           Type.Type                      ( Type(..) )
 import           Data.List                      ( find )
+import qualified Language.C.Clang.Cursor.Typed as T
 
 -- | All available expressions
 -- Warning: The cursors are NOT injective! 
@@ -129,21 +133,24 @@ instance Pretty t => Pretty (StructField' t Cursor) where
 
 type StructField = StructField' Type Cursor
 
-data Struct' t c = Struct !c !t !Name ![StructField' t c] ![ConstructorCursor] -- t ~ TCon
+data Struct' t c = Struct !c !t !Name ![StructField' t c] ![ConstructorCursor] ![Name]-- t ~ TCon
   deriving stock (Eq, Show, Functor)
 
 type Struct = Struct' Type Cursor
 
 instance Pretty t => Pretty (Struct' t Cursor) where
-  pretty (Struct _ _ name s _) = "struct" <+> pretty name <+> "=" <+> PP.align
-    (braced $ pretty <$> s)
+  pretty (Struct _ _ name s _ _) =
+    "struct" <+> pretty name <+> "=" <+> PP.align (braced $ pretty <$> s)
    where
     braced = PP.encloseSep (PP.flatAlt "{ " "{") (PP.flatAlt " }" "}") ", "
 
 findField :: Name -> Struct' t c -> Maybe (StructField' t c)
-findField n (Struct _ _ _ fields _) = find (isThisYourFieldName n) fields
+findField n (Struct _ _ _ fields _ _) = find (isThisYourFieldName n) fields
  where
   isThisYourFieldName name (StructField _ _ fieldName) = name == fieldName
+
+hasMethod :: Name -> Struct' t c -> Bool
+hasMethod n (Struct c _ _ _ _ methods) = n `elem` methods
 
 data TopLevel' t c = TLLet !(Let' t c)
                    | TLLetRecursive !(NonEmpty (Let' t c))
@@ -175,8 +182,8 @@ instance Pretty t => Pretty (Expr' t Cursor) where
   pretty (App _ e1   e2@App{}) = pretty e1 <+> PP.parens (pretty e2)
   pretty (App _ e1   e2      ) = pretty e1 <+> pretty e2
   pretty (Lam _ name expr    ) = "\\" <> pretty name <+> "->" <+> pretty expr
-  pretty expr@LetIn{}          = PP.align
-    (PP.vsep ((prettyLet <$> lets) <> ["in" <+> pretty restExpr]))
+  pretty expr@LetIn{}          = PP.align $
+    PP.vsep [PP.vsep (prettyLet <$> lets), PP.vsep ["in" <+> pretty restExpr]]
    where
     (lets, restExpr) = gatherLets expr
     prettyLet (n, e) = "let" <+> pretty n <+> "=" <+> pretty e
@@ -234,7 +241,7 @@ instance HasCursor TopLevel where
     setter c newCursor = c $> newCursor
 
 instance HasCursor (Struct' t Cursor) where
-  cursorL = lens (\(Struct c _ _ _ _) -> c) ($>)
+  cursorL = lens (\(Struct c _ _ _ _ _) -> c) ($>)
 
 unit :: Cursor -> Expr
 unit c = Builtin c BuiltinUnit

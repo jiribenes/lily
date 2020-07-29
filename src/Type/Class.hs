@@ -216,7 +216,7 @@ updateInstances
 updateInstances (n, new) instances = instances & at n %~ fmap (new <>)
 
 hasFieldForStruct :: Struct -> (Name, [ClassInstance])
-hasFieldForStruct (Struct _ structType _ fields _) =
+hasFieldForStruct (Struct _ structType _ fields _ _) =
   ("HasField", fields >>= makeFieldInstances)
  where
   makeFieldInstances :: StructField -> [ClassInstance]

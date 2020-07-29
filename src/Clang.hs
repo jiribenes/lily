@@ -6,10 +6,6 @@ module Clang
   )
 where
 
--- TODO: Reexport clang-pure things
--- Ideally, we'll only use this module and it's submodules
--- and not clang-pure directly! 
-
 import           Language.C.Clang               ( parseTranslationUnit
                                                 , ClangIndexOption
                                                   ( DisplayDiagnostics

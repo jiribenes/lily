@@ -8,4 +8,3 @@ int* useafterfree(int* inp) {
     delete inp;
     return inp; // same as above
 }
-

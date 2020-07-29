@@ -68,7 +68,7 @@ data ElaborationError = WeirdFunctionBody Location
                   | ExpectedReferencedExpr Location
                   | ExpectedThis Location
                   | ExpectedNamed Location
-                  | ElaborationWeirdness Location -- this is a catch-all TODO: replace by appropriate use!
+                  | ElaborationWeirdness Location -- this is a catch-all
     deriving stock (Show, Eq)
 
 instance Pretty ElaborationError where
@@ -100,7 +100,7 @@ instance Pretty ElaborationError where
       "Expected a valid Clang type for expression at: " <+> prettyLocation l
     NotImplementedYet l -> PP.align
       (PP.sep
-        [ "TODO: Elaborationing of this AST node is not implemented yet!"
+        [ "Elaboration of this AST node is not implemented!"
         , "Location: " <+> prettyLocation l
         ]
       )
@@ -146,9 +146,10 @@ getCurrentStruct = do
       pure $ find (isThisYourCtor ctor') structs
  where
   isThisYourCtor :: ConstructorCursor -> Struct -> Bool
-  isThisYourCtor ctor (Struct _ _ _ _ ctors) = ctor `elem` ctors
+  isThisYourCtor ctor (Struct _ _ _ _ ctors _) = ctor `elem` ctors
 
-type MonadElaboration m = (MonadError ElaborationError m, MonadReader ElaborationEnv m)
+type MonadElaboration m
+  = (MonadError ElaborationError m, MonadReader ElaborationEnv m)
 
 elaborateExpr :: MonadElaboration m => Cursor -> m Expr
 elaborateExpr cursor = case cursorKind cursor of
@@ -270,7 +271,7 @@ elaborateExpr cursor = case cursorKind cursor of
     case ctor of
       Nothing -> throwError (ElaborationWeirdness $ loc cursor)
       Just _  -> do
-        (Struct _ t _ _ _) <- fromJust <$> getCurrentStruct
+        (Struct _ t _ _ _ _) <- fromJust <$> getCurrentStruct
         let this = Builtin cursor (BuiltinThis t)
         pure this
 
@@ -309,7 +310,10 @@ elaborateLiteral cursor = do
 
 -- | Elaborations a block
 elaborateBlock
-  :: MonadElaboration m => (Cursor -> Expr) -> T.CursorK 'CompoundStmt -> m Expr
+  :: MonadElaboration m
+  => (Cursor -> Expr)
+  -> T.CursorK 'CompoundStmt
+  -> m Expr
 elaborateBlock defaultResult cursor = do
   result <- elaborateBlockCont defaultResult cursor
   pure $ result $ defaultResult (T.withoutKind cursor)
@@ -335,7 +339,10 @@ elaborateBlockCont defaultResult cursor = do
 elaborateStmt :: MonadElaboration m => (Cursor -> Expr) -> Cursor -> m Expr
 elaborateStmt defaultResult cursor = case cursorKind cursor of
   CompoundStmt ->
-    elaborateBlock defaultResult $ fromJust $ T.matchKind @ 'CompoundStmt $ cursor
+    elaborateBlock defaultResult
+      $ fromJust
+      $ T.matchKind @ 'CompoundStmt
+      $ cursor
   _ -> do
     stmtCont <- elaborateBlockOne defaultResult cursor
     pure $ stmtCont (defaultResult cursor)
@@ -349,7 +356,9 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
     case cursorKind child of
       VarDecl -> do
         grandchild <-
-          note (ElaborationWeirdness $ loc child) $ cursorChildren child ^? _last
+          note (ElaborationWeirdness $ loc child)
+          $  cursorChildren child
+          ^? _last
 
         expr <- elaborateExpr grandchild
 
@@ -403,7 +412,7 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
 
     unless (isAssignOp binOp) $ throwError (NotImplementedYet $ loc cursor)
     unless (not $ isJust $ withoutAssign binOp)
-      $ error "+= etc. not supported yet"
+      $ error "operators like += are not supported"
 
     leftExpr  <- elaborateExpr left
     rightExpr <- elaborateExpr right
@@ -426,7 +435,7 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
     -- }
     -- ```
     block <- elaborateBlock defaultResult
-                          (fromJust $ T.matchKind @ 'CompoundStmt cursor)
+                            (fromJust $ T.matchKind @ 'CompoundStmt cursor)
     pure $ \rest -> LetIn cursor (Name "_") block rest
 
   other -> do
@@ -446,7 +455,8 @@ elaborateSingleChild cursor = do
   let [child] = cursorChildren cursor
   elaborateExpr child
 
-elaborateTopLevelFunction :: MonadElaboration m => SomeFunctionCursor -> m TopLevel
+elaborateTopLevelFunction
+  :: MonadElaboration m => SomeFunctionCursor -> m TopLevel
 elaborateTopLevelFunction = \case
   SomeConstructor c -> elaborateConstructor c
   cursor            -> do
@@ -494,8 +504,8 @@ elaborateConstructor cursor = withConstructor cursor $ do
   env <- view currentCtor
   traceShowM env
 
-  maybeStruct        <- getCurrentStruct
-  (Struct _ t _ _ _) <- note (ExpectedValidStruct $ loc cursor) maybeStruct
+  maybeStruct          <- getCurrentStruct
+  (Struct _ t _ _ _ _) <- note (ExpectedValidStruct $ loc cursor) maybeStruct
   let returnInstance c = Builtin c (BuiltinThis t)
 
   case untypedCursor ^.. bodyF of
@@ -553,14 +563,21 @@ elaborateStruct cursor = do
         cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'FieldDecl)
   let constructors =
         cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'Constructor)
+  let methodNames =
+        cursor ^.. T.cursorChildrenF . folding (T.matchKind @ 'CXXMethod) . to
+          (nameFromBS . T.cursorSpelling)
   let name = nameFromBS $ T.cursorSpelling cursor
 
-  elaborateedFields <- traverse elaborateField fields
+  elaboratedFields <- traverse elaborateField fields
 
   let tcon = TCon $ TC name StarKind
 
-  let struct =
-        Struct (T.withoutKind cursor) tcon name elaborateedFields constructors
+  let struct = Struct (T.withoutKind cursor)
+                      tcon
+                      name
+                      elaboratedFields
+                      constructors
+                      methodNames
   pure struct
 
 elaborateField

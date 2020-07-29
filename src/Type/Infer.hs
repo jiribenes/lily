@@ -173,7 +173,7 @@ inferType = \case
     let go cs =
           runSolve
             $ {-trace
-              (unlines $ prettify <$> (cs <> cs'))-}
+              (unlines $ prettify <$> (cs <> cs')) -- TODO(jb): this is debug code, remove it -}
                cs
             <> cs'
     (subst, unsolved) <- go $ cs <> cs'
