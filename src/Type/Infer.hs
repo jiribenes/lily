@@ -19,9 +19,7 @@ import           Control.Monad.State.Strict
 import           Data.Foldable                  ( Foldable(fold)
                                                 , traverse_
                                                 )
-import           Data.List                      ( (\\)
-                                                , nub
-                                                )
+import           Data.List                      ( nub )
 import qualified Data.List.NonEmpty            as NE
 import qualified Data.Map                      as M
 import           Data.Maybe                     ( catMaybes )
@@ -35,8 +33,6 @@ import           Data.Traversable               ( for )
 import           Language.C.Clang.Cursor        ( Cursor
                                                 , CursorKind
                                                 )
-import           Debug.Trace.Pretty
-import           Debug.Trace
 
 import           Clang.OpParser
 import           Control.Monad.Fresh
@@ -53,12 +49,13 @@ import           Type.Type
 -- | Monomorphic variable set
 type InferMonos = S.Set TVar
 
+-- | All errors which can be reported during inference
 data InferError = FromSolve SolveError
                 | UnboundVariables [Name]
                 | WrongPredicate Pred
                 | WrongConstraint [Constraint]
                 | WrongConstructor Name
-                | Weirdness -- TODO: elaborate on this further!
+                | Weirdness -- ^ this just represents an unexpected error which breaks some of my invariants 
                 | UnexpectedParameterDeclarationOutsideFunction
                 | UnknownASTNodeKind CursorKind
                 deriving stock (Eq, Show)
@@ -81,12 +78,13 @@ instance Pretty InferError where
       , "Cannot recover automatically, sorry!"
       ]
     )
-    -- show (Ambiguous cs) = unlines ["Cannot match expected type: " <> show a <> " with actual type: " <> show b  | (a, b) <- cs]
-    -- show (WrongKind a b) = "Wrong kind!"
 
+-- | The state of inference includes a typeEnv ($\Gamma$) of types we have already inferred
+-- and a class environemnt 'C.ClassEnv'
 data InferState = InferState { _classEnv :: C.ClassEnv, _typeEnv :: M.Map Name Scheme }
 makeClassy ''InferState
 
+-- | The initial 'InferState'
 initialInferState :: InferState
 initialInferState =
   InferState C.initialClassEnv
@@ -163,32 +161,18 @@ inferType = \case
     -- pair known assumptions to environment types
     env <- use (typeEnv . to M.toList)
     let cs' =
-          [ CExpInst (PairedAssumption x t s) t s
+          [ CExpInst (PairedAssumption x u s) u s
           | (x, s) <- env
-          , t      <- x `A.lookup` as
+          , u      <- x `A.lookup` as
           ]
 
     -- solve all constraints together and get the resulting substitution
-    let prettify x = show (x & pretty, x ^. reasonL & pretty, t & pretty)
-    let go cs =
-          runSolve
-            $ {-trace
-              (unlines $ prettify <$> (cs <> cs')) -- TODO(jb): this is debug code, remove it -}
-               cs
-            <> cs'
-    (subst, unsolved) <- go $ cs <> cs'
+    (subst, unsolved) <- runSolve $ cs <> cs'
 
-    -- TODO: Make this prettier and put it also to the recursive part!
     let isPredicate CIn{} = True
         isPredicate _     = False
 
     let unsolvedNonPredicates = filter (not . isPredicate) unsolved
-    let rest                  = unsolved \\ unsolvedNonPredicates
-    let isSolvable c = solvable (c, rest)
-    let prettyish x = (x, x ^. reasonL)
-    tracePrettyM (S.toList . atv <$> unsolvedNonPredicates)
-    tracePrettyM (isSolvable <$> unsolvedNonPredicates)
-    tracePrettyM (prettyish <$> unsolved)
     unless (null unsolvedNonPredicates) $ throwError $ WrongConstraint
       unsolvedNonPredicates
 
@@ -222,33 +206,26 @@ inferType = \case
           , t      <- x `A.lookup` as
           ]
 
-
     -- solve all constraints together and get the resulting substitution
-    solverResults <- do
-      let relevantConstraints cs = cs <> cs'
-      let prettify x =
-            show (x & pretty, x ^. reasonL & pretty, ts ^?! _head & pretty)
-      let go cs =
-            runSolve $ -- trace
-            --(unlines $ prettify <$> relevantConstraints cs)
-                       relevantConstraints cs
-      traverse go css
+    solverResults <- traverse (runSolve . (<> cs')) css
 
-    results <- for (zip ts solverResults) $ \(t, (subst, unsolved)) -> do
+    results       <- for (zip ts solverResults) $ \(t, (subst, unsolved)) -> do
+      let isPredicate CIn{} = True
+          isPredicate _     = False
+
+      let unsolvedNonPredicates = filter (not . isPredicate) unsolved
+      unless (null unsolvedNonPredicates) $ throwError $ WrongConstraint
+        unsolvedNonPredicates
+
       let preds = subst `apply` toPreds unsolved
       let t'    = subst `apply` t
 
-      --Ideally, do a difference between these lists, but that's too hard for now
-      unless (length unsolved == length (toPreds unsolved))
-        $ throwError
-        $ WrongConstraint unsolved
-
-      pure $ {-traceShow (pretty subst, pretty preds, pretty t')-}
-             (subst, preds, t')
+      pure $ (subst, preds, t')
 
     let nameAndResult = zip names results
     pure $ M.fromList nameAndResult
 
+-- | Closes over a type and generalizes it
 closeOver :: [Pred] -> Type -> Infer Scheme
 closeOver preds t = do
   env <- use classEnv
@@ -262,17 +239,6 @@ extendMono x = local (S.insert x)
 -- | Executes a 'Infer' computation with additional monotypes
 extendMonos :: [TVar] -> Infer a -> Infer a
 extendMonos xs = local (<> S.fromList xs)
-
--- TODO: Audit 'makeFn2' and 'makeFn3'
--- as they are using a type that's not really helpful!
---
--- We don't want to use 'typeArrow' anywhere,
--- and ideally we'd like to deprecate it completely!
-makeFn2 :: Type -> Type -> Type
-makeFn2 a b = typeArrow `TAp` a `TAp` b
-
-makeFn3 :: Type -> Type -> Type -> Type
-makeFn3 a b c = typeArrow `TAp` a `TAp` makeFn2 b c
 
 makeArrow :: Type -> Type -> Type -> Type
 makeArrow x f y = f `TAp` x `TAp` y
@@ -301,30 +267,18 @@ freshFun expr = do
   f <- freshType arrowKind
   pure (f, because (BecauseExpr expr) <$> [CFun BecauseFun f])
 
--- | Take an expression and produce assumptions, result type and constraints to be solved
+-- | Takes an expression and produce assumptions, result type and constraints to be solved
 infer :: Expr -> Infer (A.Assumption Type, Type, [Constraint])
 infer expr = case expr of
-  Literal cursor typ -> do
+  Literal _ typ -> do
     pure (A.empty, typ, [])
 
   -- A variable x has type t as an assumption  
-  Var cursor x -> do
+  Var _ x -> do
     tv <- freshType StarKind
     pure (A.singleton (x, tv), tv, [])
 
-  -- An abstraction \x -> e:
-  --  - We'll presume that x has a monomorphic type tv
-  --  - Provided e produces assumptions as, type t and constraints cs
-  --  - We produce:
-  --        - Assumptions as - x
-  --        - Type tv -f> t, where f is a new type variable of arrow kind
-  --        - Constraints:
-  --           - t' ~ tv where t' is type of x in as
-  --           - cs
-  --           - Fun f
-  --           - leq f (as - x)
-  --           - wkn x tv as
-  Lam cursor x e -> do
+  Lam _ x e -> do
     (tv, a)     <- freshTypeAndTVar StarKind
     (as, t, cs) <- a `extendMono` infer e
 
@@ -342,7 +296,7 @@ infer expr = case expr of
       <> preds
       )
 
-  App cursor e1 e2 -> do
+  App _ e1 e2 -> do
     (as1, t1, cs1) <- infer e1
     (as2, t2, cs2) <- infer e2
     tv             <- freshType StarKind
@@ -351,7 +305,6 @@ infer expr = case expr of
     let as    = as1 `A.intersection` as2
     let preds = nub $ unrestricted $ as
 
-    traceShowM (as, as1, as2)
     pure
       ( as1 <> as2
       , tv
@@ -362,12 +315,11 @@ infer expr = case expr of
       <> preds
       )
 
-  LetIn cursor x e1 e2 -> do
+  LetIn _ x e1 e2 -> do
     (as1, t1, cs1) <- infer e1
     (as2, t2, cs2) <- infer e2
     monos          <- ask
-    -- Disabled, see 'Note' below
-    -- tv             <- freshType StarKind
+
     let as = as1 `A.intersection` as2
     let preds =
           because (BecauseExpr expr) <$> (nub $ unrestricted as <> wkn x t1 as2) -- Q in paper
@@ -380,12 +332,10 @@ infer expr = case expr of
       <> [ CImpInst (BecauseExpr expr) t' (TVar `S.map` monos) t1
          | t' <- A.lookup x as2
          ]
-      -- Note: This rule is disabled because I'm not sure it's needed TODO TODO
-      -- <> [ CEq (BecauseExpr expr) tv t' | t' <- A.lookup x as2 ] -- This is for the wkn condition, as we need a new type variable
       <> preds
       )
 
-  If cursor e1 e2 e3 -> do
+  If _ e1 e2 e3 -> do
     (as1, t1, cs1) <- infer e1
     (as2, t2, cs2) <- infer e2
     (as3, t3, cs3) <- infer e3
@@ -410,14 +360,14 @@ infer expr = case expr of
 
   Builtin cursor b -> inferBuiltin expr cursor b
 
+-- | Infer a type for a 'BuiltinExpr'
 inferBuiltin
   :: Expr
   -> Cursor
   -> BuiltinExpr
   -> Infer (A.Assumption Type, Type, [Constraint])
-inferBuiltin expr cursor = \case
+inferBuiltin expr _ = \case
   BuiltinBinOp bo resultTyp opTyp -> case bo of
-    -- TODO: scrap the boilerplate, use resultTyp and opTyp directly!
     BinOpEQ -> do
       tv1 <- freshType StarKind
       tv2 <- freshType StarKind
@@ -442,18 +392,17 @@ inferBuiltin expr cursor = \case
           ]
         )
   BuiltinUnOp uo resultTyp opTyp -> case uo of
-    -- TODO: scrap the boilerplate _for most!_, use resultTyp and opTyp directly!
     UnOpAddrOf -> do
       tv  <- freshType StarKind
       tv' <- freshType StarKind
       let resultType = typePtrOf tv'
-      let f          = makeFn2 tv resultType
+      let f          = UnArrow tv resultType
 
       pure (A.empty, f, [CEq (BecauseExpr expr) tv tv'])
     UnOpDeref -> do
       tv         <- freshType StarKind
       resultType <- freshType StarKind
-      let f = makeFn2 (typePtrOf tv) resultType
+      let f = UnArrow (typePtrOf tv) resultType
 
       pure (A.empty, f, [CEq (BecauseExpr expr) tv resultType])
     _ -> do
@@ -487,7 +436,7 @@ inferBuiltin expr cursor = \case
 
     let arrType = array `TAp` arrayElem
 
-    let f       = makeFn3 arrType subscript result
+    let f       = UnArrow arrType (UnArrow subscript result)
 
     pure
       ( A.empty
@@ -509,7 +458,7 @@ inferBuiltin expr cursor = \case
     tv         <- freshType StarKind
     resultType <- freshType StarKind
 
-    let f = makeFn2 tv resultType
+    let f = UnArrow tv resultType
 
     pure (A.empty, f, [CEq (FromClang typ expr) typ resultType])
   BuiltinNew typ -> do
@@ -517,7 +466,7 @@ inferBuiltin expr cursor = \case
     resultTv <- freshType StarKind
 
     let somePointer = typePtrOf resultTv
-    let f           = makeFn2 tv somePointer
+    let f           = UnArrow tv somePointer
 
     pure
       ( A.empty
@@ -542,9 +491,7 @@ inferBuiltin expr cursor = \case
     pure (A.empty, result, fPreds <> [CGeq (BecauseExpr expr) tv f])
   BuiltinThis typ -> pure (A.empty, typ, [])
 
-
-
--- | Attempt to convert the type scheme into a normal(ish) format  
+-- | Attempt to convert the type scheme into a normalized format  
 normalize :: C.ClassEnv -> Scheme -> Scheme
 normalize env (Forall origVars (origPreds :=> origBody)) = Forall
   (M.elems sub)

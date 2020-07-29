@@ -16,22 +16,26 @@ where
 import           Control.Lens
 import           Options.Applicative
 
+-- | All possible commands supported by Lily
 data Command = Elaborate
              | Infer
              | Lint
   deriving stock (Show, Eq, Ord)
 
+-- | All possible options supported by Lily
 data Options = Options {
-    _optCommand :: !Command,
-    _optSource :: !FilePath,
-    _optVerbose :: !Bool,
-    _optClangArguments :: ![String]
+    _optCommand :: !Command, -- ^ the chosen command
+    _optSource :: !FilePath, -- ^ chosen input file
+    _optVerbose :: !Bool, -- ^ verbosity switch
+    _optClangArguments :: ![String] -- ^ additional arguments passed on to Clang
 } deriving stock (Show, Eq, Ord)
 makeLenses ''Options
 
+-- | Parses 'Options' from command-line inputs
 parseOptions :: IO Options
 parseOptions = execParser optionsParser
 
+-- | An applicative parser for 'Options' made using the 'Options.Applicative' library
 optionsParser :: ParserInfo Options
 optionsParser = info
   (    (   Options
@@ -46,7 +50,7 @@ optionsParser = info
     "lily - a research linter for C++ based on linear types"
   )
  where
-  commandOption  = hsubparser (commandElaborate <> commandInfer <> commandLint)
+  commandOption = hsubparser (commandElaborate <> commandInfer <> commandLint)
   commandElaborate = command
     "elaborate"
     (info (pure Elaborate) (progDesc "Just elaborate the program into Core"))

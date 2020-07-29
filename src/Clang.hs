@@ -27,6 +27,8 @@ import           Clang.MemberParser            as X
 import           Clang.Struct                  as X
 import           Clang.Type                    as X
 
+-- | Entry point to interaction with Clang. Takes a 'FilePath' and a list of arguments
+-- and possibly returns the root of Clang AST for the file.
 createTranslationUnit :: FilePath -> [String] -> IO (Maybe TranslationUnit)
 createTranslationUnit filepath clangOptions = do
   idx <- createIndexWithOptions [DisplayDiagnostics]

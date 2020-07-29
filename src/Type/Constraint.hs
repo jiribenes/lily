@@ -30,6 +30,7 @@ import           Core.Syntax                    ( Expr )
 import           Name
 import           Type.Type
 
+-- | All possible reasons describing how a 'Constraint' came to be
 data Reason = BecauseExpr Expr
             | BecauseIfCondition Expr Expr
             | BecauseIfBranches Expr Expr Expr
@@ -108,15 +109,18 @@ instance Pretty Reason where
     PP.align $ PP.sep [pretty first, pretty second]
   pretty JustBecause = "because I said so (internal!)"
 
+-- | Adds a new 'Reason' to a 'Constraint'
 because :: Reason -> Constraint -> Constraint
 because r' c = c & reasonL %~ (\r -> CombinedReason r r')
 
-data Constraint = CEq Reason Type Type
-                | CExpInst Reason Type Scheme
-                | CImpInst Reason Type (S.Set Type) Type
-                | CIn Reason Name (NonEmpty Type)
+-- | Models all possible constraints
+data Constraint = CEq Reason Type Type -- ^ equality constraint
+                | CExpInst Reason Type Scheme -- ^ implicit instantiation constraint
+                | CImpInst Reason Type (S.Set Type) Type -- ^ explicit instantiation constraint
+                | CIn Reason Name (NonEmpty Type) -- ^ predicate constraint
                 deriving stock (Show)
 
+-- | A lens which gets/sets a 'Reason' from a 'Constraint'
 reasonL :: Lens' Constraint Reason
 reasonL = lens getter (flip setter)
  where
@@ -133,7 +137,6 @@ reasonL = lens getter (flip setter)
     CIn _ n ts             -> CIn r' n ts
 
 -- | Equality disregards the reason
--- which is just for diagnostics/nice output
 instance Eq Constraint where
   CEq _ t1 u1         == CEq _ t2 u2         = t1 == t2 && u1 == u2
   CImpInst _ t1 m1 u1 == CImpInst _ t2 m2 u2 = t1 == t2 && m1 == m2 && u1 == u2
