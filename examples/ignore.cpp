@@ -1,8 +1,3 @@
-template <typename T>
-T ignored(T x) {
-    return x;
-}
-
 struct Box {
     int x;
     int y;
@@ -12,19 +7,22 @@ struct Box {
     }
 };
 
-int main() {
-    // we can infer that 'ignored' _must_ have the 'Un' constraint on its return type!
-    ignored("some strings");
+void ignore(int x) {
+    return;
+}
 
-    ignored(2);
+void ignoreBox(Box x) {
+    return;
+}
+
+int main() {
+    // We can infer that 'ignored' _must_ have the 'Un' constraint on its return type!
+    ignore(2);
     
-    // TODO: this case should fail in the checking phase (which is TODO)
-    // because 'Box' is not semantically 'Un'restricted.
-    // Therefore this could potentially leak resources!
-    //
     // For now, we correctly infer that 'main' needs @Un Box@.
-    // We just have to throw the error!
-    ignored(Box(6, 6));
+    ignoreBox(Box(6, 6));
+
+    return 0;
 }
 
 int retFirst(Box& box) {

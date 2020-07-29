@@ -201,8 +201,8 @@ elaborateExpr cursor = case cursorKind cursor of
     pure $ Var cursor fullName
 
   CXXNewExpr ->
-    -- TODO: This is not correct at all!
-    -- look at 'new int' vs 'new int[7]' vs 'new Struct' vs 'new Struct[10]'
+    -- Warning: This is not correct for all possible shapes of CXXNewExpr. 
+    -- e.g. look at 'new int' vs 'new int[7]' vs 'new Struct' vs 'new Struct[10]'
                 case cursorChildren cursor of
     [] -> do
       typ <- extractType cursor
@@ -259,7 +259,6 @@ elaborateExpr cursor = case cursorKind cursor of
           -- hope that this is a constructor.
       exprs <- traverse elaborateExpr args
 
-      -- TODO: can we write this using Lens?
       let exprs' = case exprs of
             [] -> [unit cursor]
             xs -> xs
@@ -393,14 +392,10 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
     _ -> throwError (InvalidIfShape $ loc cursor)
 
   CallExpr -> do
-      -- TODO: should we force here that this has a void return value?
-      --       what to do otherwise with ignored return values?
     expr <- elaborateExpr cursor
     pure $ \rest -> LetIn cursor (Name "_") expr rest
 
   FirstExpr -> do
-      -- TODO: should we force here that this has a void return value?
-      --       what to do otherwise with ignored return values?
     expr <- elaborateExpr cursor
     pure $ \rest -> LetIn cursor (Name "_") expr rest
 
@@ -424,7 +419,7 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
     pure $ \rest -> LetIn cursor (Name "_") setter rest
 
   CompoundStmt -> do
-    -- TODO: we're throwing away some possible semantic information here!
+    -- Note: we might be throwing away some possible semantic information here!
     -- in the following case:
     --
     -- ```
@@ -439,15 +434,12 @@ elaborateBlockOne defaultResult cursor = case cursorKind cursor of
     pure $ \rest -> LetIn cursor (Name "_") block rest
 
   other -> do
-    -- best effort 
-    traceM $ "Encountered: " <> show other <> " in a block. Hopefully it's ok!"
-    traceM "I'll interpret it as a normal expression!"
+    -- best effort:
     -- it's not a declaration
     -- so rewrite it as `let _ = <expr> in...`
 
     expr <- elaborateExpr cursor
 
-    -- TODO: make throwaway name!
     pure $ \rest -> LetIn cursor (Name "_") expr rest
 
 elaborateSingleChild :: MonadElaboration m => Cursor -> m Expr

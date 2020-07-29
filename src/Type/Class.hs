@@ -219,6 +219,11 @@ hasFieldForStruct :: Struct -> (Name, [ClassInstance])
 hasFieldForStruct (Struct _ structType _ fields _ _) =
   ("HasField", fields >>= makeFieldInstances)
  where
+  allWraps :: Type -> [Type]   
+  allWraps t = [t, LRef t, RRef t]
+
   makeFieldInstances :: StructField -> [ClassInstance]
-  makeFieldInstances (StructField _ t n) =
-    (\x -> simpleInstance $ PHasField (TSym n) structType x) <$> [t, LRef t, RRef t]
+  makeFieldInstances (StructField _ t n) = do
+    wrappedTy <- allWraps t
+    wrappedStructTy <- allWraps structType
+    pure $ simpleInstance $ PHasField (TSym n) wrappedStructTy wrappedTy
