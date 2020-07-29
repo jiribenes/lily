@@ -1,7 +1,3 @@
--- | TODO: 
--- * remove satisfied predicates (somehow?)
--- * replace 'normalize' in Infer with this
--- * put fresh variables - ideally 'f', 'g', 'h' for functions, 'a', 'b', 'c' for other types
 module Type.Simplify
   ( simplifyScheme
   )
@@ -14,6 +10,9 @@ import           Data.List                      ( (\\)
                                                 )
 import           Type.Type
 
+{- | This function is the top-level scheme (aka polytype)
+    simplifier which returns a normalized version of a polytype
+-}
 simplifyScheme :: Scheme -> Scheme
 simplifyScheme (Forall tvs qt@(preds :=> _)) =
   Forall (tvs \\ M.keys (unSubst sub)) $ sub `apply` qt
@@ -23,19 +22,13 @@ simplifyScheme (Forall tvs qt@(preds :=> _)) =
     emptySubst
     tvs
 
+-- | Substitutes @f@ for 'typeUnArrow' when @'PFun' f@ and @'PUn' f@ are found
 substFunctionVar :: S.Set Pred -> TVar -> Subst
 substFunctionVar preds tv
-  -- -| typeKind f
-  --  == arrowKind
-  --  && filterRelevant f preds
-  --  == S.fromList [PFun f]
-  -- -- by Morris -> is equivalent to Fun f => -{f}> for fresh f
-  -- = Subst $ M.singleton tv typeArrow
   | typeKind f == arrowKind && filterRelevant f preds == S.fromList
     [PFun f, PUn f]
   = Subst $ M.singleton tv typeUnArrow
   | otherwise
   = emptySubst
- where
-  f            = TVar tv
+  where f = TVar tv
 

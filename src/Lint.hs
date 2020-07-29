@@ -10,7 +10,6 @@ where
 import qualified Data.List.NonEmpty            as NE
 import           Control.Lens
 import qualified Language.C.Clang.Cursor       as C
-import qualified Language.C.Clang              as C
 import           Data.Text                      ( Text )
 import           Data.Maybe                     ( isNothing
                                                 , fromJust
@@ -31,10 +30,7 @@ import qualified Type.Unify                    as U
 import qualified Type.Solve                    as S
 import qualified Clang.Type                    as C
 
-import           Debug.Trace.Pretty -- TODO: remove this!
-import           Debug.Trace                    ( traceShow )
-
-
+-- | Possible suggestions which are returned to the user
 data Suggestion = SuggestionInternalError Text C.Cursor
                 | SuggestionUnificationError U.UnificationError Scheme Type C.Cursor
                 | SuggestionUnsatisfiedPredicate C.Cursor Pred
@@ -109,14 +105,22 @@ instance Pretty Suggestion where
         , PP.indent 4 (pretty pred)
         , "at location:" <+> prettyLocation (loc c)
         , ""
-        , "This means that a value of type '" <> pretty t <> "' is either duplicated or discarded!"
+        , "This means that a value of type '"
+        <> pretty t
+        <> "' is either duplicated or discarded!"
         , "Note that this might be a false positive -- this might be fine for your type, especially if it's a small type!"
         , ""
         ]
       )
+
+-- | Entry point into the linter phase, takes an 'InferState'
+-- and a 'Program' and returns a list of possible issues
+-- formatted as 'Suggestion's.
 lintProgram :: InferState -> Program -> [Suggestion]
 lintProgram is toplevels = toplevels >>= lintTopLevel is
 
+-- | Lints a single top-level function in contrast to
+-- 'lintProgram' which lints _all_ top-level functions.
 lintTopLevel :: InferState -> TopLevel -> [Suggestion]
 lintTopLevel _  (TLStruct       _ ) = []
 lintTopLevel is (TLLet          l ) = lintLet is l
@@ -130,6 +134,8 @@ lintTopLevel is (TLLetRecursive ls) = (NE.toList ls) >>= lintLet is
 -- This means that it needs to have both
 -- type @() -> Struct@ and @()@ which is what
 -- Clang thinks it should have. It's bonkers.
+
+-- | Lints a single top-level let construct.
 lintLet :: InferState -> Let -> [Suggestion]
 lintLet is (Let _ LetConstructor _ _) = []
 lintLet is (Let c LetFunction n _)
@@ -143,22 +149,26 @@ lintLet is (Let c LetFunction n _)
   inferredType = is ^. typeEnv . at n
   clangType    = C.fromClangType =<< C.cursorType c
 
+-- | This is the core of the linter --- it tries to unify the inferred type
+-- with a type from Clang and find issues.
 suggest :: InferState -> C.Cursor -> Scheme -> Type -> [Suggestion]
 suggest is c inferredType clangType =
   case runExcept (inferredType `U.onewayUnifies` clangType) of
-    Left err ->
-      traceShow (C.typeCanonicalType <$> C.cursorType c)
-        $ [SuggestionUnificationError err inferredType clangType c]
+    Left err -> [SuggestionUnificationError err inferredType clangType c]
     Right (_, preds) ->
       let simplifiedPredicates =
               S.simplifyMany (is ^. classEnv) (S.fromPred JustBecause <$> preds)
       in  catMaybes $ makeUnsatSpecific c <$> S.toPreds simplifiedPredicates
 
+-- | This function produces a specific suggestion from a single grievance
 makeUnsatSpecific :: C.Cursor -> Pred -> Maybe Suggestion
-makeUnsatSpecific c p@(PUn (t `TAp` _)) | t == typePtr = pure $ SuggestionUnrestrictedPointer c p
-                                        | t == typeRRef = pure $ SuggestionUnrestrictedRRef c p 
-makeUnsatSpecific c p@(PUn t) | t == typeArrow = Nothing -- hotfix, sometimes a (Un ->) constraint appears from legacy code, this should not be presented to the user!
-                              | t == typeLinArrow = pure $ SuggestionUnrestrictedLinFunction c p
-                              | otherwise = pure $ SuggestionUnrestrictedSomething c p t
+makeUnsatSpecific c p@(PUn (t `TAp` _))
+  | t == typePtr  = pure $ SuggestionUnrestrictedPointer c p
+  | t == typeRRef = pure $ SuggestionUnrestrictedRRef c p
+makeUnsatSpecific c p@(PUn t)
+  | t == typeArrow    = Nothing
+  | -- hotfix, sometimes a (Un ->) constraint appears from legacy code, this should not be presented to the user!
+    t == typeLinArrow = pure $ SuggestionUnrestrictedLinFunction c p
+  | otherwise         = pure $ SuggestionUnrestrictedSomething c p t
 makeUnsatSpecific c p@(PFun t) | t == typeArrow = Nothing -- hotfix, sometimes a (Fun ->) constraint appears from legacy code, this should not be presented to the user!
 makeUnsatSpecific c p = pure $ SuggestionUnsatisfiedPredicate c p
